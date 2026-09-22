@@ -473,6 +473,61 @@ test("a grant covers the path it names and nothing beside it", () => {
   );
 });
 
+test("a directory grant covers a file beneath it and not a sibling sharing its prefix", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
+  const sibling = `${denied}-sibling`;
+  mkdirSync(sibling);
+
+  guard.grantPath(denied);
+
+  assert.deepEqual(
+    guard({ toolName: "write", input: { path: join(denied, "file.txt") } }),
+    {},
+  );
+  assert.equal(
+    guard({ toolName: "write", input: { path: join(sibling, "file.txt") } })
+      .block,
+    true,
+  );
+});
+
+test("refuses a glob grant loudly, so a pattern cannot silently grant less", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
+
+  const result = guard.grantPath(join(denied, "*.env"));
+
+  if (result.granted) assert.fail("a glob must not be granted");
+  assert.match(result.reason, /pattern/);
+  assert.equal(
+    guard({ toolName: "read", input: { path: join(denied, "x.env") } }).block,
+    true,
+  );
+});
+
+test("a grant of a path that does not exist yet still covers it once it appears", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
+  const future = join(denied, "future.txt");
+
+  guard.grantPath(future);
+
+  assert.deepEqual(guard({ toolName: "read", input: { path: future } }), {});
+});
+
 test("a tool grant covers every path that Tool touches", () => {
   const guard = createGuard({
     policy,

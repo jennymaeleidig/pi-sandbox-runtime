@@ -1,6 +1,5 @@
 import {
   createToolInventory,
-  type Claim,
   type ToolCallLike,
   type ToolOverride,
   type ToolSchema,
@@ -52,13 +51,16 @@ export interface GuardDecision {
  */
 export interface Guard {
   (event: ToolCallLike): GuardDecision;
-  /** Admit one path for the rest of the session. */
-  grantPath(path: string): void;
+  /** Admit one path for the rest of the session. A glob is refused: a grant is a path, not a pattern. */
+  grantPath(path: string): GrantResult;
   /** Admit every path touched by one Tool for the rest of the session. */
   grantTool(toolName: string): void;
   /** What the session has opened, for the user to inspect. */
   grants(): { paths: string[]; tools: string[] };
 }
+
+export type GrantResult =
+  { granted: true; path: string } | { granted: false; reason: string };
 
 /** A call the guard could not judge, whatever the cause. */
 export type Unjudgeable =
@@ -133,7 +135,7 @@ export function createGuard(options: GuardOptions): Guard {
   const grantedPaths = new Set<string>();
   const grantedTools = new Set<string>();
 
-  const isGranted = (claim: Claim): boolean =>
+  const isGranted = (claim: CanonicalClaim): boolean =>
     [...grantedPaths].some((granted) => withinGrant(claim.path, granted));
 
   const guard = (event: ToolCallLike): GuardDecision => {
@@ -181,10 +183,19 @@ export function createGuard(options: GuardOptions): Guard {
     return {};
   };
 
-  guard.grantPath = (path: string): void => {
-    // Resolved against the session's cwd and canonicalized, so a grant and the claim it excuses
-    // are compared in the same form.
-    grantedPaths.add(canonicalizeAgainst(path, cwd));
+  guard.grantPath = (path: string): GrantResult => {
+    // A grant is a path, not a pattern: matching it by the pattern engine let a glob silently cover
+    // less than the user believed, so refuse it loudly instead.
+    if (path.includes("*")) {
+      return {
+        granted: false,
+        reason: `"${path}" is a pattern, and a session grant is a path. Grant the directory it is meant to cover instead.`,
+      };
+    }
+    // Resolved against the session's cwd and canonicalized once, here; lookup only compares forms.
+    const canonical = canonicalizeAgainst(path, cwd);
+    grantedPaths.add(canonical);
+    return { granted: true, path: canonical };
   };
   guard.grantTool = (toolName: string): void => {
     grantedTools.add(toolName);

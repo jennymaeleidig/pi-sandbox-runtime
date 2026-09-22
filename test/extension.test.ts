@@ -287,6 +287,30 @@ test("grantholders: /guard-allow admits a refused path for the session", async (
   assert.deepEqual(await host.call("tool_call", readCall(path)), {});
 });
 
+test("grantholders: /guard-allow refuses a glob instead of granting a pattern", async () => {
+  writeConfig(validConfig);
+  const host = fakePi();
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+  await startSession(host);
+
+  await host.command("guard-allow", join(denied, "*.env"));
+
+  assert.equal(
+    (
+      (await host.call("tool_call", readCall(join(denied, "x.env")))) as {
+        block?: boolean;
+      }
+    ).block,
+    true,
+  );
+  assert.ok(
+    host.notifications.some(
+      (entry) => entry.kind === "warning" && /pattern/.test(entry.message),
+    ),
+    JSON.stringify(host.notifications),
+  );
+});
+
 test("grantholders: /guard-allow tool:<name> admits an unmapped Tool", async () => {
   writeConfig(validConfig);
   const host = fakePi();

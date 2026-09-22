@@ -230,7 +230,11 @@ export default function guardExtension(
         return;
       }
 
-      guard.grantPath(target);
+      const result = guard.grantPath(target);
+      if (!result.granted) {
+        ctx.ui.notify(`guard: ${result.reason}`, "warning");
+        return;
+      }
       ctx.ui.notify(
         `guard: ${target} is admitted for the rest of this session`,
         "info",
