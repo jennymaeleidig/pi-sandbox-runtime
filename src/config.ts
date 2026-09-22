@@ -188,12 +188,27 @@ function toolsOverrides(config: Json): Record<string, ToolOverride> {
   const tools = objectAt(config, "tools");
   const overrides: Record<string, ToolOverride> = {};
   for (const [name, value] of Object.entries(tools)) {
-    if (!isJsonObject(value)) continue;
-    const fields = stringArray(value["fields"]) ?? [];
+    if (!isJsonObject(value)) {
+      throw new Error(`sandbox.json: tools.${name} must be an object`);
+    }
+    const fields = value["fields"];
+    if (!Array.isArray(fields) || !fields.every((f) => typeof f === "string")) {
+      throw new Error(
+        `sandbox.json: tools.${name}.fields must be an array of strings`,
+      );
+    }
     const access = value["access"];
     if (access !== "read" && access !== "write" && access !== "none") {
       throw new Error(
         `sandbox.json: tools.${name}.access must be one of "read", "write", "none"`,
+      );
+    }
+    // An override that names no fields, yet declares an access, would be judged as touching no
+    // paths and silently allowed — protection below even the name-heuristic default. "none" is the
+    // only deliberate way to say a Tool touches no paths, so anything else here is a config error.
+    if (access !== "none" && fields.length === 0) {
+      throw new Error(
+        `sandbox.json: tools.${name}.fields names no path fields; use access "none" if ${name} touches no paths`,
       );
     }
     overrides[name] = { fields, access };

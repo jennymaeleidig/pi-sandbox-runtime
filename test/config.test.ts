@@ -246,6 +246,49 @@ test("refuses a tools map that is not a map of Tool names", () => {
   assert.throws(() => loadGuardConfig(dir), /tools/);
 });
 
+test("refuses a Tool override whose fields is missing, naming the Tool", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { format_md_tables: { access: "write" } },
+  });
+
+  assert.throws(() => loadGuardConfig(dir), /tools\.format_md_tables\.fields/);
+});
+
+test("refuses a Tool override whose fields names a non-string, so a typo cannot fail open", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { format_md_tables: { fields: ["path", 5], access: "write" } },
+  });
+
+  assert.throws(() => loadGuardConfig(dir), /tools\.format_md_tables\.fields/);
+});
+
+test("refuses a Tool override that declares an access but names no fields", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { format_md_tables: { fields: [], access: "write" } },
+  });
+
+  // "none" is the only deliberate way to say a Tool touches no paths.
+  assert.throws(() => loadGuardConfig(dir), /tools\.format_md_tables/);
+});
+
+test("accepts access none with empty fields, the deliberate touches-nothing form", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { legacy_notes: { fields: [], access: "none" } },
+  });
+
+  assert.deepEqual(loadGuardConfig(dir).overrides, {
+    legacy_notes: { fields: [], access: "none" },
+  });
+});
+
 test("an absent config file is not an error", () => {
   const dir = fixtureDir();
 
