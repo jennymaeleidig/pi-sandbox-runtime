@@ -1,16 +1,15 @@
 import { resolve } from "node:path";
 
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+
 import { canonicalizePath } from "./policy.ts";
 
 export type Access = "read" | "write";
 
-/** The only part of a Tool's advertised schema the guard consumes. */
-export interface ToolSchema {
-  name: string;
-  parameters: {
-    properties?: Record<string, { type?: unknown }>;
-  };
-}
+/** The only part of a Tool's advertised schema the guard consumes; pi's `ToolInfo` satisfies it. */
+export type ToolSchema = Pick<ToolInfo, "name"> & {
+  parameters: { properties?: Record<string, { type?: unknown }> };
+};
 
 export interface Claim {
   path: string;
@@ -29,7 +28,49 @@ export type ClaimResult =
   | { kind: "none" }
   | { kind: "unmapped" };
 
-const COMMAND_TOOLS = new Set(["bash", "powershell"]);
+/** A Tool call, as pi hands it to the guard. */
+export interface ToolCallLike {
+  toolName: string;
+  input: Record<string, unknown>;
+}
+
+/** What a Tool call touches, behind one entry point. */
+export interface ToolInventory {
+  touches(call: ToolCallLike): ClaimResult;
+}
+
+/**
+ * What a Tool call must be judged as.
+ *
+ * The single home of the Shell Tool fact: the guard judges a call by its kind, and the extension
+ * asks `needsLiveFence` for the same fact. pi has no shell notion of its own, so only this table can
+ * say which Tools are commands.
+ */
+type ToolKind = "command" | "paths";
+
+// pi's `ToolName` union (`dist/core/tools/index.d.ts:23`), which the package does not re-export from
+// its root. A new core Tool added upstream should surface here, and the matching table row below is
+// the one edit it then needs.
+type CoreToolName =
+  "read" | "bash" | "powershell" | "edit" | "write" | "grep" | "find" | "ls";
+
+const TOOL_KINDS = {
+  bash: "command",
+  powershell: "command",
+  read: "paths",
+  write: "paths",
+  edit: "paths",
+  grep: "paths",
+  find: "paths",
+  ls: "paths",
+} as const satisfies Record<CoreToolName, ToolKind>;
+
+/** Whether this Tool's access only the OS fence can enforce, so it needs a live sandbox. */
+export function needsLiveFence(toolName: string): boolean {
+  const kinds: Record<string, ToolKind | undefined> = TOOL_KINDS;
+  return kinds[toolName] === "command";
+}
+
 const WRITE_TOOLS = new Set(["write", "edit"]);
 const READ_TOOLS = new Set(["read", "grep", "find", "ls"]);
 /** Tools whose `path` is optional, defaulting to the working directory. */
@@ -99,19 +140,18 @@ function accessFromToolName(name: string): Access {
 /**
  * Map a Tool call to the paths it touches.
  *
- * Precedence: an explicit config entry wins, then a known table for core Tools, then the Tool's own
+ * Precedence: command Tools first (a `tools` override must never be able to turn the fence's
+ * network check off), then an explicit config entry, then a known core Tool, then the Tool's own
  * advertised parameter schema. Anything left over is `unmapped` and the guard refuses it.
  */
-export function mapToolCall(
+function mapToolCall(
   toolName: string,
   input: Record<string, unknown>,
   tools: readonly ToolSchema[],
   overrides: Record<string, ToolOverride>,
   cwd: string,
 ): ClaimResult {
-  if (COMMAND_TOOLS.has(toolName)) {
-    // Command Tools are judged as commands ahead of any config entry: a `tools` override must not be
-    // able to turn the OS fence's network check off.
+  if (needsLiveFence(toolName)) {
     const command = input["command"];
     return {
       kind: "command",
@@ -170,4 +210,24 @@ export function canonicalClaims(
     path: canonicalizePath(resolve(cwd, claim.path)),
     access: claim.access,
   }));
+}
+
+export interface ToolInventoryDeps {
+  /** The live Tool list, read per call so a Tool registered mid-session is judged, not refused. */
+  tools: () => readonly ToolSchema[];
+  overrides: Record<string, ToolOverride>;
+  cwd: string;
+}
+
+export function createToolInventory(deps: ToolInventoryDeps): ToolInventory {
+  return {
+    touches: (call) =>
+      mapToolCall(
+        call.toolName,
+        call.input,
+        deps.tools(),
+        deps.overrides,
+        deps.cwd,
+      ),
+  };
 }

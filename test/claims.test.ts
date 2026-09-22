@@ -1,0 +1,103 @@
+import test from "node:test";
+import assert from "node:assert/strict";
+
+import {
+  createToolInventory,
+  needsLiveFence,
+  type ToolSchema,
+} from "../src/claims.ts";
+
+/** A Tool contributed by another pi-package, as pi advertises it via `getAllTools()`. */
+function toolSchema(
+  name: string,
+  properties: Record<string, { type?: unknown }>,
+): ToolSchema {
+  return { name, parameters: { properties } };
+}
+
+test("the kind table is the one home of the Shell Tool fact", () => {
+  assert.equal(needsLiveFence("bash"), true);
+  assert.equal(needsLiveFence("powershell"), true);
+
+  for (const name of ["read", "write", "edit", "grep", "find", "ls"]) {
+    assert.equal(needsLiveFence(name), false, name);
+  }
+  assert.equal(needsLiveFence("mystery_tool"), false);
+});
+
+test("a command Tool is judged as a command, ahead of any config entry", () => {
+  // A `tools` override must not be able to turn the fence's network check off.
+  const inventory = createToolInventory({
+    tools: () => [],
+    overrides: { bash: { fields: ["command"], access: "read" } },
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "bash", input: { command: "curl x" } }),
+    { kind: "command", command: "curl x" },
+  );
+});
+
+test("an explicit config entry beats the core Tool table", () => {
+  const inventory = createToolInventory({
+    tools: () => [toolSchema("lint_notes", { out: { type: "string" } })],
+    overrides: { lint_notes: { fields: ["out"], access: "write" } },
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "lint_notes", input: { out: "/tmp/x" } }),
+    { kind: "claims", claims: [{ path: "/tmp/x", access: "write" }] },
+  );
+});
+
+test("an unknown Tool with path fields is judged by its schema", () => {
+  const inventory = createToolInventory({
+    tools: () => [toolSchema("format_md_tables", { path: { type: "string" } })],
+    overrides: {},
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({
+      toolName: "format_md_tables",
+      input: { path: "/tmp/doc.md" },
+    }),
+    { kind: "claims", claims: [{ path: "/tmp/doc.md", access: "write" }] },
+  );
+});
+
+test("an unknown Tool with no path field is unmapped, the fail-closed arm", () => {
+  const inventory = createToolInventory({
+    tools: () => [],
+    overrides: {},
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "publish_notes", input: { mode: "dry" } }),
+    { kind: "unmapped" },
+  );
+});
+
+test("the provider is read per call, so a Tool that appears later is judged", () => {
+  let tools: ToolSchema[] = [];
+  const inventory = createToolInventory({
+    tools: () => tools,
+    overrides: {},
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "late_tool", input: { path: "/tmp/x" } }),
+    { kind: "unmapped" },
+  );
+
+  tools = [toolSchema("late_tool", { path: { type: "string" } })];
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "late_tool", input: { path: "/tmp/x" } }),
+    { kind: "claims", claims: [{ path: "/tmp/x", access: "write" }] },
+  );
+});

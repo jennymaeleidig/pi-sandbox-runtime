@@ -254,6 +254,22 @@ test("refuses a shell Tool before the sandbox is running", async () => {
   assert.match(decision.reason ?? "", /not running/);
 });
 
+test("fences every command kind, not just bash, before the sandbox is running", async () => {
+  writeConfig(validConfig);
+  const host = fakePi();
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+
+  const decision = (await host.call("tool_call", {
+    type: "tool_call",
+    toolCallId: "call-ps",
+    toolName: "powershell",
+    input: { command: "echo hi" },
+  })) as { block?: boolean; reason?: string };
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /not running/);
+});
+
 test("grantholders: /guard-allow admits a refused path for the session", async () => {
   writeConfig(validConfig);
   const host = fakePi();

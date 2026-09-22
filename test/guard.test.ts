@@ -27,7 +27,12 @@ const policy: GuardPolicy = {
 };
 
 test("allows a read inside an allowed root", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.deepEqual(
     guard({ toolName: "read", input: { path: join(allowed, "file.txt") } }),
@@ -36,7 +41,12 @@ test("allows a read inside an allowed root", () => {
 });
 
 test("refuses a read inside a denied region, naming the path and the tool", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   const decision = guard({
     toolName: "read",
@@ -53,7 +63,7 @@ test("re-opens a denied region where allowRead names a path beneath it", () => {
   // The upstream deny-then-allow pattern: denyRead: ["/Users"], allowRead: ["."].
   const guard = createGuard({
     policy: { ...policy, denyRead: [root], allowRead: [allowed] },
-    tools: [],
+    tools: () => [],
     overrides: {},
     cwd: root,
   });
@@ -76,7 +86,7 @@ test("keeps a deny that is more specific than the allowance covering it", () => 
       denyRead: [join(denied, "*.env")],
       allowRead: [denied],
     },
-    tools: [],
+    tools: () => [],
     overrides: {},
     cwd: root,
   });
@@ -99,7 +109,7 @@ test("judges a read by the read rules alone, not by what is writable", () => {
       denyRead: [root],
       allowWrite: [allowed],
     },
-    tools: [],
+    tools: () => [],
     overrides: {},
     cwd: root,
   });
@@ -122,7 +132,7 @@ test("refuses an extension Tool that only reads inside a denied region", () => {
   const reader = toolSchema("lint_notes", { path: { type: "string" } });
   const guard = createGuard({
     policy,
-    tools: [reader],
+    tools: () => [reader],
     overrides: {},
     cwd: root,
   });
@@ -150,7 +160,7 @@ const formatter = toolSchema("format_md_tables", { path: { type: "string" } });
 test("refuses a write by an extension Tool that is neither write nor edit", () => {
   const guard = createGuard({
     policy,
-    tools: [formatter],
+    tools: () => [formatter],
     overrides: {},
     cwd: root,
   });
@@ -168,7 +178,7 @@ test("refuses a write by an extension Tool that is neither write nor edit", () =
 test("allows that same extension Tool to write inside allowWrite", () => {
   const guard = createGuard({
     policy,
-    tools: [formatter],
+    tools: () => [formatter],
     overrides: {},
     cwd: root,
   });
@@ -185,7 +195,7 @@ test("allows that same extension Tool to write inside allowWrite", () => {
 test("denyWrite beats allowWrite", () => {
   const guard = createGuard({
     policy: { ...policy, denyWrite: [join(allowed, "secret.env")] },
-    tools: [],
+    tools: () => [],
     overrides: {},
     cwd: root,
   });
@@ -202,7 +212,7 @@ test("denyWrite beats allowWrite", () => {
 test("an explicit config entry beats the Tool-name heuristic", () => {
   const guard = createGuard({
     policy,
-    tools: [toolSchema("lint_notes", { out: { type: "string" } })],
+    tools: () => [toolSchema("lint_notes", { out: { type: "string" } })],
     overrides: { lint_notes: { fields: ["out"], access: "write" } },
     cwd: root,
   });
@@ -219,7 +229,7 @@ test("an explicit config entry beats the Tool-name heuristic", () => {
 test("refuses an unmapped Tool that advertises no path field", () => {
   const guard = createGuard({
     policy,
-    tools: [toolSchema("publish_notes", { mode: { type: "string" } })],
+    tools: () => [toolSchema("publish_notes", { mode: { type: "string" } })],
     overrides: {},
     cwd: root,
   });
@@ -234,7 +244,12 @@ test("refuses an unmapped Tool that advertises no path field", () => {
 });
 
 test("refuses a Tool it has no schema for at all", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   const decision = guard({ toolName: "mystery_tool", input: {} });
 
@@ -242,10 +257,36 @@ test("refuses a Tool it has no schema for at all", () => {
   assert.match(decision.reason ?? "", /mystery_tool/);
 });
 
+test("judges a Tool that appears in the provider after the guard is built", () => {
+  let tools: ToolSchema[] = [];
+  const guard = createGuard({
+    policy,
+    tools: () => tools,
+    overrides: {},
+    cwd: root,
+  });
+  const call = {
+    toolName: "late_tool",
+    input: { path: join(denied, "file.txt") },
+  };
+
+  const before = guard(call);
+  assert.equal(before.block, true);
+  assert.match(before.reason ?? "", /Declare the Tool/);
+
+  // pi has no tool-set-change event, so a snapshot taken at session start would go stale here.
+  tools = [toolSchema("late_tool", { path: { type: "string" } })];
+
+  const after = guard(call);
+  assert.equal(after.block, true);
+  assert.match(after.reason ?? "", /write/);
+  assert.doesNotMatch(after.reason ?? "", /Declare the Tool/);
+});
+
 test("allows a Tool declared as touching no paths", () => {
   const guard = createGuard({
     policy,
-    tools: [],
+    tools: () => [],
     overrides: { no_path_tool: { fields: [], access: "none" } },
     cwd: root,
   });
@@ -254,7 +295,12 @@ test("allows a Tool declared as touching no paths", () => {
 });
 
 test("refuses a command naming a domain outside allowedDomains", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   const decision = guard({
     toolName: "bash",
@@ -266,7 +312,12 @@ test("refuses a command naming a domain outside allowedDomains", () => {
 });
 
 test("allows a command naming an allowed domain, including a wildcard match", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.deepEqual(
     guard({
@@ -278,7 +329,12 @@ test("allows a command naming an allowed domain, including a wildcard match", ()
 });
 
 test("leaves command filesystem access to the OS fence", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.deepEqual(
     guard({ toolName: "bash", input: { command: "cat /etc/hosts" } }),
@@ -287,7 +343,12 @@ test("leaves command filesystem access to the OS fence", () => {
 });
 
 test("fences grep, find and ls, which the previous guard left unchecked", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   const calls: ToolCallLike[] = [
     { toolName: "grep", input: { pattern: "secret", path: denied } },
@@ -303,7 +364,12 @@ test("fences grep, find and ls, which the previous guard left unchecked", () => 
 });
 
 test("judges a call that omits an optional path against the working directory", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: denied });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: denied,
+  });
 
   const decision = guard({ toolName: "grep", input: { pattern: "secret" } });
 
@@ -312,7 +378,12 @@ test("judges a call that omits an optional path against the working directory", 
 });
 
 test("judges a glob under the directory it names", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.deepEqual(
     guard({ toolName: "read", input: { path: join(allowed, "*.md") } }),
@@ -327,7 +398,12 @@ test("judges a glob under the directory it names", () => {
 });
 
 test("judges a relative path against the session's working directory", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
   const call = { toolName: "read", input: { path: `denied/notes.md` } };
 
   assert.equal(
@@ -346,7 +422,12 @@ test("judges a relative path against the session's working directory", () => {
 });
 
 test("allows a refused call once its path is granted for the session", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
   const call = { toolName: "read", input: { path: join(denied, "file.txt") } };
 
   assert.equal(guard(call).block, true);
@@ -357,7 +438,12 @@ test("allows a refused call once its path is granted for the session", () => {
 });
 
 test("a grant covers the path it names and nothing beside it", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   guard.grantPath(join(denied, "file.txt"));
 
@@ -369,7 +455,12 @@ test("a grant covers the path it names and nothing beside it", () => {
 });
 
 test("a tool grant covers every path that Tool touches", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   guard.grantTool("read");
 
@@ -385,7 +476,12 @@ test("a tool grant covers every path that Tool touches", () => {
 });
 
 test("a grant also covers an unmapped Tool", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.equal(guard({ toolName: "mystery_tool", input: {} }).block, true);
 
@@ -395,7 +491,12 @@ test("a grant also covers an unmapped Tool", () => {
 });
 
 test("lists what has been granted, so the user can see what they opened", () => {
-  const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {},
+    cwd: root,
+  });
 
   guard.grantPath(join(denied, "file.txt"));
   guard.grantTool("mystery_tool");

@@ -12,6 +12,7 @@ import {
   type ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
 
+import { needsLiveFence } from "./claims.ts";
 import { loadGuardConfig } from "./config.ts";
 import { createGuard, type Guard } from "./guard.ts";
 import {
@@ -20,9 +21,6 @@ import {
   type BashOps,
   type SandboxRuntime,
 } from "./sandbox.ts";
-
-/** Tools whose filesystem access only the OS fence can enforce, so they need a live sandbox. */
-const FENCED_SHELL_TOOLS = new Set(["bash", "powershell"]);
 
 export interface GuardExtensionDeps {
   /** Replaced in tests, so the wiring can be exercised without the runtime's proxy processes. */
@@ -87,7 +85,7 @@ export default function guardExtension(
       const ops = createSandboxedBashOps(runtime, shell);
       const handler = createGuard({
         policy: config.policy,
-        tools: pi.getAllTools(),
+        tools: () => pi.getAllTools(),
         overrides: config.overrides,
         cwd: ctx.cwd,
       });
@@ -176,7 +174,7 @@ export default function guardExtension(
           reason: `Guard refused ${event.toolName}: ${fenceUnavailableReason}`,
         };
       }
-      if (FENCED_SHELL_TOOLS.has(event.toolName) && bashOps === undefined) {
+      if (needsLiveFence(event.toolName) && bashOps === undefined) {
         return {
           block: true,
           reason: `Guard refused ${event.toolName}: the OS sandbox is not running, so this command could not be fenced`,

@@ -2,11 +2,14 @@ import { resolve } from "node:path";
 
 import {
   canonicalClaims,
-  mapToolCall,
+  createToolInventory,
   type Claim,
+  type ToolCallLike,
   type ToolOverride,
   type ToolSchema,
 } from "./claims.ts";
+
+export type { ToolCallLike } from "./claims.ts";
 import {
   canonicalizePath,
   domainIsAllowed,
@@ -26,15 +29,13 @@ export interface GuardPolicy {
 
 export interface GuardOptions {
   policy: GuardPolicy;
-  /** The Tool inventory (pi's `getAllTools()`), used to introspect extension Tools. */
-  tools: readonly ToolSchema[];
+  /**
+   * The live Tool list (pi's `getAllTools()`), read per call so a Tool another package registers
+   * mid-session is judged like any other rather than refused as `unmapped`.
+   */
+  tools: () => readonly ToolSchema[];
   overrides: Record<string, ToolOverride>;
   cwd: string;
-}
-
-export interface ToolCallLike {
-  toolName: string;
-  input: Record<string, unknown>;
 }
 
 export interface GuardDecision {
@@ -132,6 +133,7 @@ function refusedDomain(
  */
 export function createGuard(options: GuardOptions): Guard {
   const { policy, tools, overrides, cwd } = options;
+  const inventory = createToolInventory({ tools, overrides, cwd });
   const grantedPaths = new Set<string>();
   const grantedTools = new Set<string>();
 
@@ -141,13 +143,10 @@ export function createGuard(options: GuardOptions): Guard {
   const guard = (event: ToolCallLike): GuardDecision => {
     if (grantedTools.has(event.toolName)) return {};
 
-    const mapped = mapToolCall(
-      event.toolName,
-      event.input,
-      tools,
-      overrides,
-      cwd,
-    );
+    const mapped = inventory.touches({
+      toolName: event.toolName,
+      input: event.input,
+    });
 
     if (mapped.kind === "command") {
       const domain = refusedDomain(mapped.command, policy);
