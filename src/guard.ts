@@ -12,6 +12,7 @@ import {
   compilePathPolicy,
   domainIsAllowed,
   extractDomainsFromCommand,
+  pathIsWithin,
   type CanonicalClaim,
   type Refusal,
 } from "./policy.ts";
@@ -138,8 +139,7 @@ function refusedDomain(
 
 /** Whether a grant excuses a canonical claim: it names the claim, or a directory above it. */
 function withinGrant(path: string, granted: string): boolean {
-  const separator = granted.endsWith("/") ? "" : "/";
-  return path === granted || path.startsWith(granted + separator);
+  return pathIsWithin(path, granted);
 }
 
 /**

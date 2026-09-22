@@ -1,4 +1,14 @@
-import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+import type {
+  BashToolCallEvent,
+  EditToolCallEvent,
+  FindToolCallEvent,
+  GrepToolCallEvent,
+  LsToolCallEvent,
+  PowerShellToolCallEvent,
+  ReadToolCallEvent,
+  ToolInfo,
+  WriteToolCallEvent,
+} from "@earendil-works/pi-coding-agent";
 
 export type Access = "read" | "write";
 
@@ -47,13 +57,19 @@ type CoreToolFacts =
   | { kind: "command" }
   | { kind: "paths"; access: Access; pathRequired: boolean };
 
-// pi's `ToolName` union (`dist/core/tools/index.d.ts:23`), which the package does not re-export from
-// its root. A new core Tool added upstream should surface here, and the matching row below is the
-// one edit it then needs: every per-Tool fact — command-or-paths, access, whether `path` is
-// optional — lives in `TOOL_FACTS`, so neither the fence check nor the claim mapping has a second
-// table to update.
+// pi does not re-export its `ToolName` union from the package root, but each core Tool's
+// `tool_call` event type is exported and carries that Tool's literal name, so the union is derived
+// from pi rather than copied. A core Tool pi adds or renames then fails this table's `satisfies`
+// check at compile time, instead of silently falling through to introspection.
 type CoreToolName =
-  "read" | "bash" | "powershell" | "edit" | "write" | "grep" | "find" | "ls";
+  | BashToolCallEvent["toolName"]
+  | PowerShellToolCallEvent["toolName"]
+  | ReadToolCallEvent["toolName"]
+  | EditToolCallEvent["toolName"]
+  | WriteToolCallEvent["toolName"]
+  | GrepToolCallEvent["toolName"]
+  | FindToolCallEvent["toolName"]
+  | LsToolCallEvent["toolName"];
 
 const TOOL_FACTS = {
   bash: { kind: "command" },

@@ -130,12 +130,18 @@ function compilePattern(pattern: string, cwd: string): CompiledPattern {
   return { canonical, isGlob: false, regex: null };
 }
 
+/**
+ * Whether `path` is `root` itself or a descendant of it. The one home of the containment rule: a
+ * region pattern matches by it, and a session grant is a literal region.
+ */
+export function pathIsWithin(path: string, root: string): boolean {
+  const separator = root.endsWith("/") ? "" : "/";
+  return path === root || path.startsWith(root + separator);
+}
+
 function matches(path: string, pattern: CompiledPattern): boolean {
   if (pattern.regex !== null) return pattern.regex.test(path);
-  const separator = pattern.canonical.endsWith("/") ? "" : "/";
-  return (
-    path === pattern.canonical || path.startsWith(pattern.canonical + separator)
-  );
+  return pathIsWithin(path, pattern.canonical);
 }
 
 /**
