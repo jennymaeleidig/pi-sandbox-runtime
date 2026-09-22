@@ -25,7 +25,10 @@ export interface SandboxRuntime {
   /** POSIX: fold a command into a shell string, already fenced. */
   wrapWithSandbox(command: string, shell?: string): Promise<string>;
   /** Windows: hand back the argv to spawn, already fenced. */
-  wrapWithSandboxArgv(command: string, shell?: string): Promise<{ argv: string[]; env: NodeJS.ProcessEnv }>;
+  wrapWithSandboxArgv(
+    command: string,
+    shell?: string,
+  ): Promise<{ argv: string[]; env: NodeJS.ProcessEnv }>;
   getSocksProxyPort(): number | undefined;
   cleanupAfterCommand(): void;
   reset(): Promise<void>;
@@ -66,8 +69,10 @@ export function createSandboxRuntime(): SandboxRuntime {
     isSupportedPlatform: () => SandboxManager.isSupportedPlatform(),
     checkDependencies: () => SandboxManager.checkDependenciesAsync(),
     initialize: (config) => SandboxManager.initialize(config),
-    wrapWithSandbox: (command, shell) => SandboxManager.wrapWithSandbox(command, shell),
-    wrapWithSandboxArgv: (command, shell) => SandboxManager.wrapWithSandboxArgv(command, shell),
+    wrapWithSandbox: (command, shell) =>
+      SandboxManager.wrapWithSandbox(command, shell),
+    wrapWithSandboxArgv: (command, shell) =>
+      SandboxManager.wrapWithSandboxArgv(command, shell),
     getSocksProxyPort: () => SandboxManager.getSocksProxyPort(),
     cleanupAfterCommand: () => SandboxManager.cleanupAfterCommand(),
     reset: () => SandboxManager.reset(),
@@ -78,7 +83,10 @@ export function createSandboxRuntime(): SandboxRuntime {
  * OpenSSH ignores `ALL_PROXY`, unlike most tools that honour the runtime's network proxy, so on
  * macOS install a shell function that routes `ssh` through the runtime's local SOCKS proxy.
  */
-function sshProxyShim(runtime: SandboxRuntime, platform: NodeJS.Platform): string {
+function sshProxyShim(
+  runtime: SandboxRuntime,
+  platform: NodeJS.Platform,
+): string {
   const port = runtime.getSocksProxyPort();
   if (platform !== "darwin" || port === undefined) return "";
   return `ssh() { /usr/bin/ssh -o 'ProxyCommand=/usr/bin/nc -X 5 -x localhost:${port} %h %p' "$@"; }; `;
@@ -182,7 +190,8 @@ export function createSandboxedBashOps(
 ): BashOps {
   return {
     async exec(command, cwd, { onData, signal, timeout, env }) {
-      if (!existsSync(cwd)) throw new Error(`Working directory does not exist: ${cwd}`);
+      if (!existsSync(cwd))
+        throw new Error(`Working directory does not exist: ${cwd}`);
 
       // Windows has no shell-string wrapper: the runtime returns the argv to spawn under its
       // dedicated sandbox account instead. Both branches are fenced before anything runs.

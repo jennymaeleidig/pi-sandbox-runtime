@@ -15,7 +15,9 @@ const cwd = mkdtempSync(join(tmpdir(), "guard-cwd-"));
  * what the guard owes the runtime is a wrapping call and a cleanup call, and that contract is what
  * these tests pin.
  */
-function fakeRuntime(options: { socksProxyPort?: number } = {}): SandboxRuntime & {
+function fakeRuntime(
+  options: { socksProxyPort?: number } = {},
+): SandboxRuntime & {
   wrapped: { command: string; shell: string | undefined }[];
   argvWrapped: string[];
   cleanups: number;
@@ -25,7 +27,10 @@ function fakeRuntime(options: { socksProxyPort?: number } = {}): SandboxRuntime 
     argvWrapped: [] as string[],
     cleanups: 0,
     isSupportedPlatform: () => true,
-    async checkDependencies(): Promise<{ warnings: string[]; errors: string[] }> {
+    async checkDependencies(): Promise<{
+      warnings: string[];
+      errors: string[];
+    }> {
       return { warnings: [], errors: [] };
     },
     async initialize(): Promise<void> {},
@@ -39,7 +44,11 @@ function fakeRuntime(options: { socksProxyPort?: number } = {}): SandboxRuntime 
       runtime.argvWrapped.push(command);
       // An argv that echoes the command, so the test can prove the child really ran.
       return {
-        argv: [process.execPath, "-e", `process.stdout.write(${JSON.stringify(command)})`],
+        argv: [
+          process.execPath,
+          "-e",
+          `process.stdout.write(${JSON.stringify(command)})`,
+        ],
         env: { SRT_FENCED: "1" },
       };
     },
@@ -66,7 +75,9 @@ test("runs the command through the shell and returns its exit code", async () =>
   const ops = createSandboxedBashOps(runtime, shell);
   const output = collect();
 
-  const result = await ops.exec("echo hello-from-sandbox", cwd, { onData: output.onData });
+  const result = await ops.exec("echo hello-from-sandbox", cwd, {
+    onData: output.onData,
+  });
 
   assert.equal(result.exitCode, 0);
   assert.match(Buffer.concat(output.chunks).toString(), /hello-from-sandbox/);
@@ -98,10 +109,16 @@ test("spawns the fenced argv the runtime hands back on Windows", async () => {
   const ops = createSandboxedBashOps(runtime, shell, "win32");
   const output = collect();
 
-  const result = await ops.exec("echo hello-from-windows", cwd, { onData: output.onData });
+  const result = await ops.exec("echo hello-from-windows", cwd, {
+    onData: output.onData,
+  });
 
   assert.equal(result.exitCode, 0);
-  assert.equal(runtime.wrapped.length, 0, "the POSIX shell wrapper must not be used on Windows");
+  assert.equal(
+    runtime.wrapped.length,
+    0,
+    "the POSIX shell wrapper must not be used on Windows",
+  );
   assert.deepEqual(runtime.argvWrapped, ["echo hello-from-windows"]);
   assert.match(Buffer.concat(output.chunks).toString(), /hello-from-windows/);
 });
@@ -126,7 +143,10 @@ test("kills a command that overruns its timeout", async () => {
     /timeout:1/,
   );
 
-  assert.ok(Date.now() - started < 10_000, "the timeout should kill the command, not wait it out");
+  assert.ok(
+    Date.now() - started < 10_000,
+    "the timeout should kill the command, not wait it out",
+  );
 });
 
 test("kills a command when the caller aborts", async () => {
@@ -141,7 +161,10 @@ test("kills a command when the caller aborts", async () => {
     /aborted/,
   );
 
-  assert.ok(Date.now() - started < 10_000, "aborting should kill the command, not wait it out");
+  assert.ok(
+    Date.now() - started < 10_000,
+    "aborting should kill the command, not wait it out",
+  );
 });
 
 test("tells the runtime each command has finished, so it can release proxy state", async () => {
@@ -149,7 +172,9 @@ test("tells the runtime each command has finished, so it can release proxy state
   const ops = createSandboxedBashOps(runtime, shell);
 
   await ops.exec("echo done", cwd, { onData: () => {} });
-  await assert.rejects(ops.exec("sleep 30", cwd, { onData: () => {}, timeout: 1 }));
+  await assert.rejects(
+    ops.exec("sleep 30", cwd, { onData: () => {}, timeout: 1 }),
+  );
 
   assert.equal(runtime.cleanups, 2);
 });
@@ -186,7 +211,9 @@ test("writes the command to stdin when the shell is configured that way", async 
   });
   const output = collect();
 
-  const result = await ops.exec("echo from-stdin", cwd, { onData: output.onData });
+  const result = await ops.exec("echo from-stdin", cwd, {
+    onData: output.onData,
+  });
 
   assert.equal(result.exitCode, 0);
   assert.match(Buffer.concat(output.chunks).toString(), /from-stdin/);

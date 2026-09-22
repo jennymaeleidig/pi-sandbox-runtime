@@ -79,7 +79,9 @@ function readConfigFile(path: string): Json {
     if (!isJsonObject(parsed)) throw new Error("expected a JSON object");
     return parsed;
   } catch (error) {
-    throw new Error(`${path} is not valid JSON: ${error instanceof Error ? error.message : error}`);
+    throw new Error(
+      `${path} is not valid JSON: ${error instanceof Error ? error.message : error}`,
+    );
   }
 }
 
@@ -90,7 +92,9 @@ function objectAt(config: Json, key: string): Json {
 
 function stringArray(value: unknown): string[] | undefined {
   if (!Array.isArray(value)) return undefined;
-  return value.every((item): item is string => typeof item === "string") ? value : undefined;
+  return value.every((item): item is string => typeof item === "string")
+    ? value
+    : undefined;
 }
 
 function layerValue(config: Json, dotted: string): unknown {
@@ -106,7 +110,11 @@ function withKey(target: Json, dotted: string, value: unknown): void {
 }
 
 /** The layers' path and domain lists, unioned so a project file adds to the global one. */
-function unionList(globalConfig: Json, projectConfig: Json, dotted: string): string[] | undefined {
+function unionList(
+  globalConfig: Json,
+  projectConfig: Json,
+  dotted: string,
+): string[] | undefined {
   const globalValue = stringArray(layerValue(globalConfig, dotted));
   const projectValue = stringArray(layerValue(projectConfig, dotted));
   if (globalValue === undefined && projectValue === undefined) return undefined;
@@ -123,7 +131,10 @@ function unionList(globalConfig: Json, projectConfig: Json, dotted: string): str
 function mergedConfig(globalConfig: Json, projectConfig: Json): Json {
   const merged: Json = { ...globalConfig, ...projectConfig };
   for (const section of ["network", "filesystem"] as const) {
-    merged[section] = { ...objectAt(globalConfig, section), ...objectAt(projectConfig, section) };
+    merged[section] = {
+      ...objectAt(globalConfig, section),
+      ...objectAt(projectConfig, section),
+    };
   }
   for (const dotted of ARRAY_KEYS) {
     const union = unionList(globalConfig, projectConfig, dotted);
@@ -131,7 +142,10 @@ function mergedConfig(globalConfig: Json, projectConfig: Json): Json {
   }
   // The `tools` map layers per Tool: a project entry for one Tool must not delete the global entries
   // beside it, which is what the plain spread above would do.
-  const tools = { ...objectAt(globalConfig, "tools"), ...objectAt(projectConfig, "tools") };
+  const tools = {
+    ...objectAt(globalConfig, "tools"),
+    ...objectAt(projectConfig, "tools"),
+  };
   if (Object.keys(tools).length > 0) merged["tools"] = tools;
   return merged;
 }
@@ -150,7 +164,9 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
   for (const section of ["network", "filesystem"] as const) {
     const suppliedSection = objectAt(supplied, section);
     const parsedSection: unknown = parsed[section];
-    const accepted = new Set(isJsonObject(parsedSection) ? Object.keys(parsedSection) : []);
+    const accepted = new Set(
+      isJsonObject(parsedSection) ? Object.keys(parsedSection) : [],
+    );
     for (const key of Object.keys(suppliedSection)) {
       if (!accepted.has(key)) dropped.push(`${section}.${key}`);
     }
@@ -162,7 +178,9 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
 function assertToolsMapIsAnObject(config: Json, path: string): void {
   const tools = config["tools"];
   if (tools !== undefined && !isJsonObject(tools)) {
-    throw new Error(`${path}: "tools" must be an object mapping Tool names to overrides`);
+    throw new Error(
+      `${path}: "tools" must be an object mapping Tool names to overrides`,
+    );
   }
 }
 
@@ -187,7 +205,10 @@ function toolsOverrides(config: Json): Record<string, ToolOverride> {
  * Load the guard's policy from the existing sandbox config files: the global file in the agent
  * directory, then the project file under `.pi/`, with project values layered over global ones.
  */
-export function loadGuardConfig(paths: { agentDir: string; cwd: string }): GuardConfig {
+export function loadGuardConfig(paths: {
+  agentDir: string;
+  cwd: string;
+}): GuardConfig {
   const globalPath = join(paths.agentDir, "sandbox.json");
   const projectPath = join(paths.cwd, ".pi", "sandbox.json");
   const globalConfig = readConfigFile(globalPath);
@@ -219,11 +240,15 @@ export function loadGuardConfig(paths: { agentDir: string; cwd: string }): Guard
     const issues = parsed.error.issues
       .map((issue) => `${issue.path.join(".") || "(root)"}: ${issue.message}`)
       .join("; ");
-    throw new Error(`${globalPath} or ${projectPath} is not a valid sandbox config — ${issues}`);
+    throw new Error(
+      `${globalPath} or ${projectPath} is not a valid sandbox config — ${issues}`,
+    );
   }
 
   const dropped = droppedKeys(supplied, parsed.data);
-  const unrecognised = dropped.filter((key) => !GUARD_KEYS.has(key) && !LEGACY_KEYS.has(key));
+  const unrecognised = dropped.filter(
+    (key) => !GUARD_KEYS.has(key) && !LEGACY_KEYS.has(key),
+  );
   if (unrecognised.length > 0) {
     throw new Error(
       `sandbox.json has unrecognised key(s): ${unrecognised.join(", ")}. ` +

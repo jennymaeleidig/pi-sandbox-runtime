@@ -13,12 +13,20 @@ function fixtureDir(): { agentDir: string; cwd: string } {
 }
 
 function writeGlobal(dir: { agentDir: string }, config: unknown): void {
-  writeFileSync(join(dir.agentDir, "sandbox.json"), JSON.stringify(config), "utf-8");
+  writeFileSync(
+    join(dir.agentDir, "sandbox.json"),
+    JSON.stringify(config),
+    "utf-8",
+  );
 }
 
 function writeProject(dir: { cwd: string }, config: unknown): void {
   mkdirSync(join(dir.cwd, ".pi"), { recursive: true });
-  writeFileSync(join(dir.cwd, ".pi", "sandbox.json"), JSON.stringify(config), "utf-8");
+  writeFileSync(
+    join(dir.cwd, ".pi", "sandbox.json"),
+    JSON.stringify(config),
+    "utf-8",
+  );
 }
 
 test("reads the filesystem and network policy out of the existing config file", () => {
@@ -45,22 +53,39 @@ test("unions the layers so a project file cannot drop a global denyRead", () => 
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: ["github.com"] },
-    filesystem: { denyRead: ["/Users"], allowRead: ["~/secrets"], allowWrite: ["/tmp"], denyWrite: [] },
+    filesystem: {
+      denyRead: ["/Users"],
+      allowRead: ["~/secrets"],
+      allowWrite: ["/tmp"],
+      denyWrite: [],
+    },
   });
   writeProject(dir, {
     network: { allowedDomains: ["npmjs.org"] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: [], denyWrite: [".env"] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: [],
+      denyWrite: [".env"],
+    },
   });
 
   const config = loadGuardConfig(dir);
 
   // Both layers, guard and OS fence, must see the same effective policy.
-  assert.deepEqual(config.policy.denyRead, ["/Users"], "the global denyRead must survive");
+  assert.deepEqual(
+    config.policy.denyRead,
+    ["/Users"],
+    "the global denyRead must survive",
+  );
   assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users"]);
   assert.deepEqual(config.policy.allowRead, ["~/secrets", "."]);
   assert.deepEqual(config.runtime.filesystem.allowRead, ["~/secrets", "."]);
   assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
-  assert.deepEqual(config.runtime.network.allowedDomains, ["github.com", "npmjs.org"]);
+  assert.deepEqual(config.runtime.network.allowedDomains, [
+    "github.com",
+    "npmjs.org",
+  ]);
   assert.deepEqual(config.policy.denyWrite, [".env"]);
 });
 
@@ -80,7 +105,12 @@ test("merges a project config over the global one, unioning the path lists", () 
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: ["github.com"] },
-    filesystem: { denyRead: ["/Users"], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: ["/Users"],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
   });
   writeProject(dir, {
     network: { allowedDomains: ["npmjs.org"] },
@@ -98,7 +128,12 @@ test("hard-errors on an unrecognised key, so a typo cannot look like protection"
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: [] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrites: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrites: ["."],
+      denyWrite: [],
+    },
   });
 
   assert.throws(() => loadGuardConfig(dir), /allowWrites/);
@@ -109,8 +144,17 @@ test("tolerates prompt-era keys, reporting them as ignored rather than stripping
   writeGlobal(dir, {
     enabled: true,
     permissionPromptTimeoutSeconds: 600,
-    network: { allowedDomains: [], allowUnauthenticatedSocksProxy: true, sshProxy: false },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    network: {
+      allowedDomains: [],
+      allowUnauthenticatedSocksProxy: true,
+      sshProxy: false,
+    },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
   });
 
   const config = loadGuardConfig(dir);
@@ -136,7 +180,12 @@ test("reads the guard's own tools map", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: [] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
     tools: { format_md_tables: { fields: ["path"], access: "write" } },
   });
 
@@ -151,7 +200,12 @@ test("adds a project tools map to the global one instead of replacing it", () =>
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: [] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
     tools: {
       format_md_tables: { fields: ["path"], access: "write" },
       legacy_notes: { fields: [], access: "none" },
@@ -180,7 +234,12 @@ test("refuses a tools map that is not a map of Tool names", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
     network: { allowedDomains: [] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
     tools: ["format_md_tables"],
   });
 
@@ -202,7 +261,12 @@ test("honours enabled: false as an explicit off switch", () => {
   writeGlobal(dir, {
     enabled: false,
     network: { allowedDomains: [] },
-    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["."],
+      denyWrite: [],
+    },
   });
 
   assert.equal(loadGuardConfig(dir).enabled, false);

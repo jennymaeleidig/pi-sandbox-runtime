@@ -14,7 +14,12 @@ import {
 
 import { loadGuardConfig } from "./config.ts";
 import { createGuard, type Guard } from "./guard.ts";
-import { createSandboxRuntime, createSandboxedBashOps, type BashOps, type SandboxRuntime } from "./sandbox.ts";
+import {
+  createSandboxRuntime,
+  createSandboxedBashOps,
+  type BashOps,
+  type SandboxRuntime,
+} from "./sandbox.ts";
 
 /** Tools whose filesystem access only the OS fence can enforce, so they need a live sandbox. */
 const FENCED_SHELL_TOOLS = new Set(["bash", "powershell"]);
@@ -28,7 +33,10 @@ export interface GuardExtensionDeps {
   platform?: NodeJS.Platform;
 }
 
-export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDeps = {}): void {
+export default function guardExtension(
+  pi: ExtensionAPI,
+  deps: GuardExtensionDeps = {},
+): void {
   const runtime = deps.runtime ?? createSandboxRuntime();
   const platform = deps.platform ?? process.platform;
   let guard: Guard | undefined;
@@ -45,7 +53,8 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
   };
 
   pi.registerFlag("no-guard", {
-    description: "Run without the sandbox guard (the OS fence and path policy are off)",
+    description:
+      "Run without the sandbox guard (the OS fence and path policy are off)",
     type: "boolean",
     default: false,
   });
@@ -62,14 +71,19 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
     }
 
     try {
-      const config = loadGuardConfig({ agentDir: deps.agentDir ?? getAgentDir(), cwd: ctx.cwd });
+      const config = loadGuardConfig({
+        agentDir: deps.agentDir ?? getAgentDir(),
+        cwd: ctx.cwd,
+      });
       if (!config.enabled) {
         status = "guard: off (enabled: false in sandbox.json)";
         ctx.ui.notify(status, "warning");
         return;
       }
 
-      const shell = getShellConfig(SettingsManager.create(ctx.cwd).getShellPath());
+      const shell = getShellConfig(
+        SettingsManager.create(ctx.cwd).getShellPath(),
+      );
       const ops = createSandboxedBashOps(runtime, shell);
       const handler = createGuard({
         policy: config.policy,
@@ -81,11 +95,15 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
       // Pre-flight before initializing: a missing platform tool must be a clear refusal here, not a
       // confusing failure inside a command later.
       if (!runtime.isSupportedPlatform()) {
-        throw new Error(`this platform (${platform}) has no OS sandbox the runtime can drive`);
+        throw new Error(
+          `this platform (${platform}) has no OS sandbox the runtime can drive`,
+        );
       }
       const dependencies = await runtime.checkDependencies();
       if (dependencies.errors.length > 0) {
-        throw new Error(`missing sandbox dependencies — ${dependencies.errors.join("; ")}`);
+        throw new Error(
+          `missing sandbox dependencies — ${dependencies.errors.join("; ")}`,
+        );
       }
       if (dependencies.warnings.length > 0) {
         ctx.ui.notify(`guard: ${dependencies.warnings.join("; ")}`, "warning");
@@ -107,7 +125,11 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
       // Every shell Tool pi offers goes through the adapter: the point of this package is that no
       // command Tool is left unfenced.
       const operations = {
-        exec: (command: string, commandCwd: string, options: Parameters<BashOps["exec"]>[2]) => {
+        exec: (
+          command: string,
+          commandCwd: string,
+          options: Parameters<BashOps["exec"]>[2],
+        ) => {
           const reason = fenceUnavailable();
           if (reason !== undefined) throw new Error(reason);
           if (bashOps === undefined) throw new Error("guard is not running");
@@ -116,10 +138,15 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
       };
 
       pi.registerTool(
-        createBashToolDefinition(ctx.cwd, { shellPath: shell.shell, operations }),
+        createBashToolDefinition(ctx.cwd, {
+          shellPath: shell.shell,
+          operations,
+        }),
       );
       if (platform === "win32") {
-        pi.registerTool(createPowerShellToolDefinition(ctx.cwd, { operations }));
+        pi.registerTool(
+          createPowerShellToolDefinition(ctx.cwd, { operations }),
+        );
       }
     } catch (error) {
       // Fail closed: a guard that could not start must not silently leave tools unguarded.
@@ -138,22 +165,28 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
     }
   });
 
-  pi.on("tool_call", (event: ToolCallEvent): ToolCallEventResult | undefined => {
-    if (disabledByFlag()) return undefined;
+  pi.on(
+    "tool_call",
+    (event: ToolCallEvent): ToolCallEventResult | undefined => {
+      if (disabledByFlag()) return undefined;
 
-    if (fenceUnavailableReason !== undefined) {
-      return { block: true, reason: `Guard refused ${event.toolName}: ${fenceUnavailableReason}` };
-    }
-    if (FENCED_SHELL_TOOLS.has(event.toolName) && bashOps === undefined) {
-      return {
-        block: true,
-        reason: `Guard refused ${event.toolName}: the OS sandbox is not running, so this command could not be fenced`,
-      };
-    }
-    if (guard === undefined) return undefined;
+      if (fenceUnavailableReason !== undefined) {
+        return {
+          block: true,
+          reason: `Guard refused ${event.toolName}: ${fenceUnavailableReason}`,
+        };
+      }
+      if (FENCED_SHELL_TOOLS.has(event.toolName) && bashOps === undefined) {
+        return {
+          block: true,
+          reason: `Guard refused ${event.toolName}: the OS sandbox is not running, so this command could not be fenced`,
+        };
+      }
+      if (guard === undefined) return undefined;
 
-    return guard({ toolName: event.toolName, input: { ...event.input } });
-  });
+      return guard({ toolName: event.toolName, input: { ...event.input } });
+    },
+  );
 
   pi.on("user_bash", () => {
     if (disabledByFlag() || bashOps === undefined) return undefined;
@@ -165,7 +198,8 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
     handler: async (_args, ctx) => {
       const grants = guard?.grants();
       const granted =
-        grants === undefined || (grants.paths.length === 0 && grants.tools.length === 0)
+        grants === undefined ||
+        (grants.paths.length === 0 && grants.tools.length === 0)
           ? "nothing granted this session"
           : `granted — paths: ${grants.paths.join(", ") || "none"}; tools: ${grants.tools.join(", ") || "none"}`;
       ctx.ui.notify(`${status}; ${granted}`, "info");
@@ -177,7 +211,10 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
     handler: async (args, ctx) => {
       const target = args.trim();
       if (target.length === 0) {
-        ctx.ui.notify("Usage: /guard-allow <path> | /guard-allow tool:<name>", "warning");
+        ctx.ui.notify(
+          "Usage: /guard-allow <path> | /guard-allow tool:<name>",
+          "warning",
+        );
         return;
       }
       if (guard === undefined) {
@@ -188,12 +225,18 @@ export default function guardExtension(pi: ExtensionAPI, deps: GuardExtensionDep
       if (target.startsWith("tool:")) {
         const toolName = target.slice("tool:".length).trim();
         guard.grantTool(toolName);
-        ctx.ui.notify(`guard: ${toolName} may run for the rest of this session`, "info");
+        ctx.ui.notify(
+          `guard: ${toolName} may run for the rest of this session`,
+          "info",
+        );
         return;
       }
 
       guard.grantPath(target);
-      ctx.ui.notify(`guard: ${target} is admitted for the rest of this session`, "info");
+      ctx.ui.notify(
+        `guard: ${target} is admitted for the rest of this session`,
+        "info",
+      );
     },
   });
 }

@@ -1,0 +1,10 @@
+# Dependencies and build artifacts
+node_modules/
+coverage/
+dist/
+
+# The ticket, its research, and the handoffs are prose records, not code.
+.scratch/
+
+# npm's own formatting; not ours to rewrite.
+package-lock.json

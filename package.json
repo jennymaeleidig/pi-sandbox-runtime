@@ -31,10 +31,13 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "0.85.1",
     "@types/node": "^24",
+    "prettier": "^3.9.8",
     "typescript": "^5"
   },
   "scripts": {
     "check": "tsc --noEmit",
+    "lint": "prettier --check .",
+    "format": "prettier --write .",
     "test": "node --test \"test/**/*.test.ts\""
   }
 }

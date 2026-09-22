@@ -38,17 +38,38 @@ const OPTIONAL_PATH_TOOLS = new Set(["grep", "find", "ls"]);
 /** Path-ish field names used when introspecting a Tool's own parameter schema. */
 const PATH_FIELD_NAMES = ["path", "file", "files", "dir", "directory", "root"];
 
-const WRITE_NAME_HINTS = ["format", "fix", "write", "create", "edit", "apply", "rewrite"];
-const READ_NAME_HINTS = ["lint", "check", "read", "list", "show", "scan", "analyze"];
+const WRITE_NAME_HINTS = [
+  "format",
+  "fix",
+  "write",
+  "create",
+  "edit",
+  "apply",
+  "rewrite",
+];
+const READ_NAME_HINTS = [
+  "lint",
+  "check",
+  "read",
+  "list",
+  "show",
+  "scan",
+  "analyze",
+];
 
-function pathFieldsFromOverride(input: Record<string, unknown>, fields: string[]): Claim[] {
+function pathFieldsFromOverride(
+  input: Record<string, unknown>,
+  fields: string[],
+): Claim[] {
   const claims: Claim[] = [];
   for (const field of fields) {
     const value = input[field];
-    if (typeof value === "string" && value.length > 0) claims.push({ path: value, access: "read" });
+    if (typeof value === "string" && value.length > 0)
+      claims.push({ path: value, access: "read" });
     if (Array.isArray(value)) {
       for (const entry of value) {
-        if (typeof entry === "string" && entry.length > 0) claims.push({ path: entry, access: "read" });
+        if (typeof entry === "string" && entry.length > 0)
+          claims.push({ path: entry, access: "read" });
       }
     }
   }
@@ -61,7 +82,9 @@ function stringFieldNames(tool: ToolSchema): string[] {
   return Object.entries(properties)
     .filter(([name, schema]) => {
       if (schema?.type !== "string" && schema?.type !== "array") return false;
-      return PATH_FIELD_NAMES.some((candidate) => name.toLowerCase().includes(candidate));
+      return PATH_FIELD_NAMES.some((candidate) =>
+        name.toLowerCase().includes(candidate),
+      );
     })
     .map(([name]) => name);
 }
@@ -90,17 +113,22 @@ export function mapToolCall(
     // Command Tools are judged as commands ahead of any config entry: a `tools` override must not be
     // able to turn the OS fence's network check off.
     const command = input["command"];
-    return { kind: "command", command: typeof command === "string" ? command : "" };
+    return {
+      kind: "command",
+      command: typeof command === "string" ? command : "",
+    };
   }
 
   const override = overrides[toolName];
   if (override !== undefined) {
     const access = override.access;
     if (access === "none") return { kind: "none" };
-    const claims = pathFieldsFromOverride(input, override.fields).map((claim) => ({
-      path: claim.path,
-      access,
-    }));
+    const claims = pathFieldsFromOverride(input, override.fields).map(
+      (claim) => ({
+        path: claim.path,
+        access,
+      }),
+    );
     return claims.length > 0 ? { kind: "claims", claims } : { kind: "none" };
   }
 
@@ -132,7 +160,10 @@ export function mapToolCall(
   return claims.length > 0 ? { kind: "claims", claims } : { kind: "unmapped" };
 }
 
-export function canonicalClaims(claims: readonly Claim[], cwd: string): Claim[] {
+export function canonicalClaims(
+  claims: readonly Claim[],
+  cwd: string,
+): Claim[] {
   // Resolved against the session's working directory, so a relative claim and the grant that excuses
   // it are compared in one form.
   return claims.map((claim) => ({

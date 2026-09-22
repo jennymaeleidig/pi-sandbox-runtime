@@ -84,10 +84,16 @@ function denyOutranksAllow(deny: string, allow: string): boolean {
  * being allowed to write somewhere never widens what can be read.
  */
 function decideRead(path: string, policy: GuardPolicy): Outcome {
-  const denies = policy.denyRead.filter((pattern) => matchesPattern(path, [pattern]));
+  const denies = policy.denyRead.filter((pattern) =>
+    matchesPattern(path, [pattern]),
+  );
   if (denies.length === 0) return { allowed: true };
-  const allows = policy.allowRead.filter((pattern) => matchesPattern(path, [pattern]));
-  const reAllowed = allows.some((allow) => denies.every((deny) => !denyOutranksAllow(deny, allow)));
+  const allows = policy.allowRead.filter((pattern) =>
+    matchesPattern(path, [pattern]),
+  );
+  const reAllowed = allows.some((allow) =>
+    denies.every((deny) => !denyOutranksAllow(deny, allow)),
+  );
   if (reAllowed) return { allowed: true };
   return { allowed: false, reason: "it falls inside a denyRead region" };
 }
@@ -101,11 +107,16 @@ function decideWrite(path: string, policy: GuardPolicy): Outcome {
 }
 
 function decideClaim(claim: Claim, policy: GuardPolicy): Outcome {
-  return claim.access === "read" ? decideRead(claim.path, policy) : decideWrite(claim.path, policy);
+  return claim.access === "read"
+    ? decideRead(claim.path, policy)
+    : decideWrite(claim.path, policy);
 }
 
 /** The first domain a command names that the policy does not allow, if any. */
-function refusedDomain(command: string, policy: GuardPolicy): string | undefined {
+function refusedDomain(
+  command: string,
+  policy: GuardPolicy,
+): string | undefined {
   for (const domain of extractDomainsFromCommand(command)) {
     if (domainIsAllowed(domain, policy.deniedDomains ?? [])) return domain;
     if (!domainIsAllowed(domain, policy.allowedDomains)) return domain;
@@ -124,12 +135,19 @@ export function createGuard(options: GuardOptions): Guard {
   const grantedPaths = new Set<string>();
   const grantedTools = new Set<string>();
 
-  const isGranted = (claim: Claim): boolean => matchesPattern(claim.path, [...grantedPaths]);
+  const isGranted = (claim: Claim): boolean =>
+    matchesPattern(claim.path, [...grantedPaths]);
 
   const guard = (event: ToolCallLike): GuardDecision => {
     if (grantedTools.has(event.toolName)) return {};
 
-    const mapped = mapToolCall(event.toolName, event.input, tools, overrides, cwd);
+    const mapped = mapToolCall(
+      event.toolName,
+      event.input,
+      tools,
+      overrides,
+      cwd,
+    );
 
     if (mapped.kind === "command") {
       const domain = refusedDomain(mapped.command, policy);

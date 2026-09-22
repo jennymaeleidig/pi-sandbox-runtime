@@ -42,18 +42,26 @@ export function canonicalizePath(filePath: string): string {
   }
 }
 
-export function matchesPattern(filePath: string, patterns: readonly string[]): boolean {
+export function matchesPattern(
+  filePath: string,
+  patterns: readonly string[],
+): boolean {
   const absolutePath = canonicalizePath(filePath);
   return patterns.some((pattern) => {
     // Glob patterns are canonicalized too, so a glob under a symlinked directory (macOS `/var`
     // beside `/private/var`, say) names the same place as the path it is matched against.
     const absolutePattern = canonicalizePath(pattern);
     if (pattern.includes("*")) {
-      const escaped = absolutePattern.replace(/[.+^${}()|[\]\\]/g, "\\$&").replace(/\*/g, ".*");
+      const escaped = absolutePattern
+        .replace(/[.+^${}()|[\]\\]/g, "\\$&")
+        .replace(/\*/g, ".*");
       return new RegExp(`^${escaped}$`).test(absolutePath);
     }
     const separator = absolutePattern.endsWith("/") ? "" : "/";
-    return absolutePath === absolutePattern || absolutePath.startsWith(absolutePattern + separator);
+    return (
+      absolutePath === absolutePattern ||
+      absolutePath.startsWith(absolutePattern + separator)
+    );
   });
 }
 
@@ -79,6 +87,11 @@ export function domainMatchesPattern(domain: string, pattern: string): boolean {
   return domain === pattern;
 }
 
-export function domainIsAllowed(domain: string, allowedDomains: readonly string[]): boolean {
-  return allowedDomains.some((pattern) => domainMatchesPattern(domain, pattern));
+export function domainIsAllowed(
+  domain: string,
+  allowedDomains: readonly string[],
+): boolean {
+  return allowedDomains.some((pattern) =>
+    domainMatchesPattern(domain, pattern),
+  );
 }

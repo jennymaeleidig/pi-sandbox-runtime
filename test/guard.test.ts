@@ -4,7 +4,11 @@ import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { createGuard, type GuardPolicy, type ToolCallLike } from "../src/guard.ts";
+import {
+  createGuard,
+  type GuardPolicy,
+  type ToolCallLike,
+} from "../src/guard.ts";
 import type { ToolSchema } from "../src/claims.ts";
 import { canonicalizePath } from "../src/policy.ts";
 
@@ -25,13 +29,19 @@ const policy: GuardPolicy = {
 test("allows a read inside an allowed root", () => {
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
 
-  assert.deepEqual(guard({ toolName: "read", input: { path: join(allowed, "file.txt") } }), {});
+  assert.deepEqual(
+    guard({ toolName: "read", input: { path: join(allowed, "file.txt") } }),
+    {},
+  );
 });
 
 test("refuses a read inside a denied region, naming the path and the tool", () => {
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
 
-  const decision = guard({ toolName: "read", input: { path: join(denied, "file.txt") } });
+  const decision = guard({
+    toolName: "read",
+    input: { path: join(denied, "file.txt") },
+  });
 
   assert.equal(decision.block, true);
   assert.match(decision.reason ?? "", /read/);
@@ -48,42 +58,79 @@ test("re-opens a denied region where allowRead names a path beneath it", () => {
     cwd: root,
   });
 
-  assert.deepEqual(guard({ toolName: "read", input: { path: join(allowed, "file.txt") } }), {});
-  assert.equal(guard({ toolName: "read", input: { path: join(denied, "file.txt") } }).block, true);
+  assert.deepEqual(
+    guard({ toolName: "read", input: { path: join(allowed, "file.txt") } }),
+    {},
+  );
+  assert.equal(
+    guard({ toolName: "read", input: { path: join(denied, "file.txt") } })
+      .block,
+    true,
+  );
 });
 
 test("keeps a deny that is more specific than the allowance covering it", () => {
   const guard = createGuard({
-    policy: { ...policy, denyRead: [join(denied, "*.env")], allowRead: [denied] },
+    policy: {
+      ...policy,
+      denyRead: [join(denied, "*.env")],
+      allowRead: [denied],
+    },
     tools: [],
     overrides: {},
     cwd: root,
   });
 
-  assert.equal(guard({ toolName: "read", input: { path: join(denied, "x.env") } }).block, true);
-  assert.deepEqual(guard({ toolName: "read", input: { path: join(denied, "notes.md") } }), {});
+  assert.equal(
+    guard({ toolName: "read", input: { path: join(denied, "x.env") } }).block,
+    true,
+  );
+  assert.deepEqual(
+    guard({ toolName: "read", input: { path: join(denied, "notes.md") } }),
+    {},
+  );
 });
 
 test("judges a read by the read rules alone, not by what is writable", () => {
   const guard = createGuard({
-    policy: { ...policy, allowRead: [], denyRead: [root], allowWrite: [allowed] },
+    policy: {
+      ...policy,
+      allowRead: [],
+      denyRead: [root],
+      allowWrite: [allowed],
+    },
     tools: [],
     overrides: {},
     cwd: root,
   });
 
-  const decision = guard({ toolName: "read", input: { path: join(allowed, "file.txt") } });
+  const decision = guard({
+    toolName: "read",
+    input: { path: join(allowed, "file.txt") },
+  });
 
-  assert.equal(decision.block, true, "being writable must not make a path readable");
+  assert.equal(
+    decision.block,
+    true,
+    "being writable must not make a path readable",
+  );
   assert.match(decision.reason ?? "", /denyRead/);
 });
 
 test("refuses an extension Tool that only reads inside a denied region", () => {
   // The read-only half of story 5: introspection must not assume every extension Tool writes.
   const reader = toolSchema("lint_notes", { path: { type: "string" } });
-  const guard = createGuard({ policy, tools: [reader], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: [reader],
+    overrides: {},
+    cwd: root,
+  });
 
-  const decision = guard({ toolName: "lint_notes", input: { path: join(denied, "notes.md") } });
+  const decision = guard({
+    toolName: "lint_notes",
+    input: { path: join(denied, "notes.md") },
+  });
 
   assert.equal(decision.block, true);
   assert.match(decision.reason ?? "", /read/);
@@ -91,14 +138,22 @@ test("refuses an extension Tool that only reads inside a denied region", () => {
 });
 
 /** A Tool contributed by another pi-package, as pi advertises it via `getAllTools()`. */
-function toolSchema(name: string, properties: Record<string, { type?: unknown }>): ToolSchema {
+function toolSchema(
+  name: string,
+  properties: Record<string, { type?: unknown }>,
+): ToolSchema {
   return { name, parameters: { properties } };
 }
 
 const formatter = toolSchema("format_md_tables", { path: { type: "string" } });
 
 test("refuses a write by an extension Tool that is neither write nor edit", () => {
-  const guard = createGuard({ policy, tools: [formatter], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: [formatter],
+    overrides: {},
+    cwd: root,
+  });
 
   const decision = guard({
     toolName: "format_md_tables",
@@ -111,10 +166,18 @@ test("refuses a write by an extension Tool that is neither write nor edit", () =
 });
 
 test("allows that same extension Tool to write inside allowWrite", () => {
-  const guard = createGuard({ policy, tools: [formatter], overrides: {}, cwd: root });
+  const guard = createGuard({
+    policy,
+    tools: [formatter],
+    overrides: {},
+    cwd: root,
+  });
 
   assert.deepEqual(
-    guard({ toolName: "format_md_tables", input: { path: join(allowed, "doc.md") } }),
+    guard({
+      toolName: "format_md_tables",
+      input: { path: join(allowed, "doc.md") },
+    }),
     {},
   );
 });
@@ -127,7 +190,10 @@ test("denyWrite beats allowWrite", () => {
     cwd: root,
   });
 
-  const decision = guard({ toolName: "write", input: { path: join(allowed, "secret.env") } });
+  const decision = guard({
+    toolName: "write",
+    input: { path: join(allowed, "secret.env") },
+  });
 
   assert.equal(decision.block, true);
   assert.match(decision.reason ?? "", /denyWrite/);
@@ -141,7 +207,10 @@ test("an explicit config entry beats the Tool-name heuristic", () => {
     cwd: root,
   });
 
-  const decision = guard({ toolName: "lint_notes", input: { out: join(denied, "notes.md") } });
+  const decision = guard({
+    toolName: "lint_notes",
+    input: { out: join(denied, "notes.md") },
+  });
 
   assert.equal(decision.block, true);
   assert.match(decision.reason ?? "", /write/);
@@ -155,7 +224,10 @@ test("refuses an unmapped Tool that advertises no path field", () => {
     cwd: root,
   });
 
-  const decision = guard({ toolName: "publish_notes", input: { mode: "dry-run" } });
+  const decision = guard({
+    toolName: "publish_notes",
+    input: { mode: "dry-run" },
+  });
 
   assert.equal(decision.block, true);
   assert.match(decision.reason ?? "", /publish_notes/);
@@ -197,7 +269,10 @@ test("allows a command naming an allowed domain, including a wildcard match", ()
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
 
   assert.deepEqual(
-    guard({ toolName: "bash", input: { command: "curl https://registry.npmjs.org/pkg" } }),
+    guard({
+      toolName: "bash",
+      input: { command: "curl https://registry.npmjs.org/pkg" },
+    }),
     {},
   );
 });
@@ -205,7 +280,10 @@ test("allows a command naming an allowed domain, including a wildcard match", ()
 test("leaves command filesystem access to the OS fence", () => {
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
 
-  assert.deepEqual(guard({ toolName: "bash", input: { command: "cat /etc/hosts" } }), {});
+  assert.deepEqual(
+    guard({ toolName: "bash", input: { command: "cat /etc/hosts" } }),
+    {},
+  );
 });
 
 test("fences grep, find and ls, which the previous guard left unchecked", () => {
@@ -236,9 +314,15 @@ test("judges a call that omits an optional path against the working directory", 
 test("judges a glob under the directory it names", () => {
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
 
-  assert.deepEqual(guard({ toolName: "read", input: { path: join(allowed, "*.md") } }), {});
+  assert.deepEqual(
+    guard({ toolName: "read", input: { path: join(allowed, "*.md") } }),
+    {},
+  );
 
-  const decision = guard({ toolName: "read", input: { path: join(denied, "*.md") } });
+  const decision = guard({
+    toolName: "read",
+    input: { path: join(denied, "*.md") },
+  });
   assert.equal(decision.block, true);
 });
 
@@ -246,11 +330,19 @@ test("judges a relative path against the session's working directory", () => {
   const guard = createGuard({ policy, tools: [], overrides: {}, cwd: root });
   const call = { toolName: "read", input: { path: `denied/notes.md` } };
 
-  assert.equal(guard(call).block, true, "a relative claim must resolve against the session cwd");
+  assert.equal(
+    guard(call).block,
+    true,
+    "a relative claim must resolve against the session cwd",
+  );
 
   guard.grantPath(`denied/notes.md`);
 
-  assert.deepEqual(guard(call), {}, "the grant must be compared in the same form");
+  assert.deepEqual(
+    guard(call),
+    {},
+    "the grant must be compared in the same form",
+  );
 });
 
 test("allows a refused call once its path is granted for the session", () => {
@@ -269,7 +361,11 @@ test("a grant covers the path it names and nothing beside it", () => {
 
   guard.grantPath(join(denied, "file.txt"));
 
-  assert.equal(guard({ toolName: "read", input: { path: join(denied, "other.txt") } }).block, true);
+  assert.equal(
+    guard({ toolName: "read", input: { path: join(denied, "other.txt") } })
+      .block,
+    true,
+  );
 });
 
 test("a tool grant covers every path that Tool touches", () => {
@@ -277,8 +373,15 @@ test("a tool grant covers every path that Tool touches", () => {
 
   guard.grantTool("read");
 
-  assert.deepEqual(guard({ toolName: "read", input: { path: join(denied, "anywhere.txt") } }), {});
-  assert.equal(guard({ toolName: "write", input: { path: join(denied, "anywhere.txt") } }).block, true);
+  assert.deepEqual(
+    guard({ toolName: "read", input: { path: join(denied, "anywhere.txt") } }),
+    {},
+  );
+  assert.equal(
+    guard({ toolName: "write", input: { path: join(denied, "anywhere.txt") } })
+      .block,
+    true,
+  );
 });
 
 test("a grant also covers an unmapped Tool", () => {
