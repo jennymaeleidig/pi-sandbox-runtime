@@ -1,0 +1,51 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below, and cite the projects it adapts."
+title: pi-sandbox-runtime
+authors:
+  - alias: jennymaeleidig
+version: 0.1.0
+date-released: "2026-09-22"
+license: CC0-1.0
+url: "https://github.com/jennymaeleidig/pi-sandbox-runtime"
+abstract: >-
+  A personal pi-package that fences shell commands with the OS through
+  @anthropic-ai/sandbox-runtime, and judges every Tool call — including Tools
+  contributed by other packages — against the same path policy. It replaces
+  carderne/pi-sandbox, which left grep, find and ls unchecked and consulted no
+  policy for extension Tools. Original code is CC0-1.0; the files named below
+  carry citation blocks for the MIT code they adapt.
+references:
+  - type: software
+    title: pi-sandbox
+    version: v0.6.8
+    authors:
+      - family-names: Arderne
+        given-names: Chris
+    repository-code: "https://github.com/carderne/pi-sandbox"
+    commit: 31fa5060689624467c1aeace2664ce91784522ff
+    license: MIT
+    notes: >-
+      Source of this package's src/policy.ts (path canonicalization, glob matching) and of the
+      sandboxed bash operations adapted into src/sandbox.ts (ssh-over-SOCKS shim, detached
+      process-group kill, stdio draining on exit).
+  - type: software
+    title: pi-mono
+    authors:
+      - family-names: Zechner
+        given-names: Mario
+    repository-code: "https://github.com/badlogic/pi-mono"
+    license: MIT
+    notes: >-
+      Upstream of pi-sandbox's sandbox example, which src/sandbox.ts descends
+      from.
+  - type: software
+    title: sandbox-runtime
+    authors:
+      - name: Anthropic
+    repository-code: "https://github.com/anthropics/sandbox-runtime"
+    version: "0.0.77"
+    license: Apache-2.0
+    notes: >-
+      The dependency this package wraps, not code copied from it. Pinned at
+      0.0.77; its module-level SandboxManager singleton is called through the
+      shim in src/sandbox.ts.

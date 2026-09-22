@@ -1,0 +1,40 @@
+{
+  "name": "pi-sandbox-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "description": "OS-level sandboxing for pi: commands fenced by sandbox-runtime, every Tool judged by the same path policy",
+  "keywords": [
+    "pi-package",
+    "pi-extension"
+  ],
+  "type": "module",
+  "engines": {
+    "node": ">=20.11.0"
+  },
+  "pi": {
+    "extensions": [
+      "./index.ts"
+    ]
+  },
+  "license": "CC0-1.0",
+  "dependencies": {
+    "@anthropic-ai/sandbox-runtime": "0.0.77"
+  },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "^0.80.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "0.85.1",
+    "@types/node": "^24",
+    "typescript": "^5"
+  },
+  "scripts": {
+    "check": "tsc --noEmit",
+    "test": "node --test \"test/**/*.test.ts\""
+  }
+}
