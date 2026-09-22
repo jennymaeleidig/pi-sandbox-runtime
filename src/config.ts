@@ -8,6 +8,7 @@ import {
 
 import type { ToolOverride } from "./claims.ts";
 import type { GuardPolicy } from "./guard.ts";
+import { isHomeRelative } from "./policy.ts";
 
 /** Config keys the guard owns rather than passing to the runtime. */
 const GUARD_KEYS = new Set(["enabled", "tools"]);
@@ -65,8 +66,6 @@ const PATH_KEYS = [
   "filesystem.allowWrite",
   "filesystem.denyWrite",
 ] as const;
-
-const HOME_PREFIX = /^~(?=$|\/)/;
 
 export interface GuardConfig {
   enabled: boolean;
@@ -190,7 +189,7 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
 /** A relative path pattern resolved against an explicit working directory; `~` and absolute
  * forms already name the same place to the guard and the runtime, so they pass through. */
 function absolutizePattern(pattern: string, cwd: string): string {
-  if (isAbsolute(pattern) || HOME_PREFIX.test(pattern)) return pattern;
+  if (isAbsolute(pattern) || isHomeRelative(pattern)) return pattern;
   return resolve(cwd, pattern);
 }
 

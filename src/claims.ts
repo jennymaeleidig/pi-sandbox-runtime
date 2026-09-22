@@ -48,60 +48,59 @@ export interface ToolInventory {
  * asks `needsLiveFence` for the same fact. pi has no shell notion of its own, so only this table can
  * say which Tools are commands.
  */
-type ToolKind = "command" | "paths";
+type CoreToolFacts =
+  | { kind: "command" }
+  | { kind: "paths"; access: Access; pathRequired: boolean };
 
 // pi's `ToolName` union (`dist/core/tools/index.d.ts:23`), which the package does not re-export from
-// its root. A new core Tool added upstream should surface here, and the matching table row below is
-// the one edit it then needs.
+// its root. A new core Tool added upstream should surface here, and the matching row below is the
+// one edit it then needs: every per-Tool fact — command-or-paths, access, whether `path` is
+// optional — lives in `TOOL_FACTS`, so neither the fence check nor the claim mapping has a second
+// table to update.
 type CoreToolName =
   "read" | "bash" | "powershell" | "edit" | "write" | "grep" | "find" | "ls";
 
-const TOOL_KINDS = {
-  bash: "command",
-  powershell: "command",
-  read: "paths",
-  write: "paths",
-  edit: "paths",
-  grep: "paths",
-  find: "paths",
-  ls: "paths",
-} as const satisfies Record<CoreToolName, ToolKind>;
+const TOOL_FACTS = {
+  bash: { kind: "command" },
+  powershell: { kind: "command" },
+  read: { kind: "paths", access: "read", pathRequired: true },
+  write: { kind: "paths", access: "write", pathRequired: true },
+  edit: { kind: "paths", access: "write", pathRequired: true },
+  // The listing Tools default to the working directory when `path` is absent.
+  grep: { kind: "paths", access: "read", pathRequired: false },
+  find: { kind: "paths", access: "read", pathRequired: false },
+  ls: { kind: "paths", access: "read", pathRequired: false },
+} as const satisfies Record<CoreToolName, CoreToolFacts>;
 
-function coreToolKind(toolName: string): ToolKind | undefined {
-  const kinds: Record<string, ToolKind | undefined> = TOOL_KINDS;
-  return kinds[toolName];
+function coreToolFacts(toolName: string): CoreToolFacts | undefined {
+  const facts: Record<string, CoreToolFacts | undefined> = TOOL_FACTS;
+  return facts[toolName];
 }
 
 /** Whether this Tool's access only the OS fence can enforce, so it needs a live sandbox. */
 export function needsLiveFence(toolName: string): boolean {
-  return coreToolKind(toolName) === "command";
+  return coreToolFacts(toolName)?.kind === "command";
 }
-
-const WRITE_TOOLS = new Set(["write", "edit"]);
-const READ_TOOLS = new Set(["read", "grep", "find", "ls"]);
-/** Tools whose `path` is optional, defaulting to the working directory. */
-const OPTIONAL_PATH_TOOLS = new Set(["grep", "find", "ls"]);
 
 /** Path-ish field names used when introspecting a Tool's own parameter schema. */
 const PATH_FIELD_NAMES = ["path", "file", "files", "dir", "directory", "root"];
 
-function pathFieldsFromOverride(
+/** The string values a declared or introspected set of path fields holds in one call. */
+function pathValues(
   input: Record<string, unknown>,
   fields: string[],
-): Claim[] {
-  const claims: Claim[] = [];
+): string[] {
+  const paths: string[] = [];
   for (const field of fields) {
     const value = input[field];
-    if (typeof value === "string" && value.length > 0)
-      claims.push({ path: value, access: "read", basis: "declared" });
+    if (typeof value === "string" && value.length > 0) paths.push(value);
     if (Array.isArray(value)) {
       for (const entry of value) {
-        if (typeof entry === "string" && entry.length > 0)
-          claims.push({ path: entry, access: "read", basis: "declared" });
+        if (typeof entry === "string" && entry.length > 0) paths.push(entry);
       }
     }
   }
-  return claims;
+  return paths;
 }
 
 function stringFieldNames(tool: ToolSchema): string[] {
@@ -147,33 +146,35 @@ function mapToolCall(
   if (override !== undefined) {
     const access = override.access;
     if (access === "none") return { kind: "none" };
-    const claims = pathFieldsFromOverride(input, override.fields).map(
-      (claim) => ({
-        path: claim.path,
-        access,
-        basis: "declared" as const,
-      }),
-    );
-    return claims.length > 0 ? { kind: "claims", claims } : { kind: "none" };
+    const paths = pathValues(input, override.fields);
+    // A declared override that yields nothing must not read as "touches no paths": only an explicit
+    // `access: "none"` means that. Refusing keeps a misspelled field name from failing open.
+    return paths.length > 0
+      ? {
+          kind: "claims",
+          claims: paths.map((path) => ({
+            path,
+            access,
+            basis: "declared" as const,
+          })),
+        }
+      : { kind: "unmapped" };
   }
 
-  if (WRITE_TOOLS.has(toolName) || READ_TOOLS.has(toolName)) {
-    const access: Access = WRITE_TOOLS.has(toolName) ? "write" : "read";
+  const facts = coreToolFacts(toolName);
+  if (facts?.kind === "paths") {
     const raw = input["path"];
     const path = typeof raw === "string" && raw.length > 0 ? raw : undefined;
-    // Only the listing Tools default to the working directory. `read`, `write` and `edit` require a
-    // path, so a call without one is refused rather than judged against a guess.
     if (path === undefined) {
-      return OPTIONAL_PATH_TOOLS.has(toolName)
-        ? {
-            kind: "claims",
-            claims: [{ path: cwd, access, basis: "declared" }],
-          }
-        : { kind: "unmapped" };
+      if (facts.pathRequired) return { kind: "unmapped" };
+      return {
+        kind: "claims",
+        claims: [{ path: cwd, access: facts.access, basis: "declared" }],
+      };
     }
     return {
       kind: "claims",
-      claims: [{ path, access, basis: "declared" }],
+      claims: [{ path, access: facts.access, basis: "declared" }],
     };
   }
 
@@ -183,15 +184,19 @@ function mapToolCall(
   const fields = stringFieldNames(tool);
   if (fields.length === 0) return { kind: "unmapped" };
 
-  const claims = pathFieldsFromOverride(input, fields).map((claim) => ({
-    path: claim.path,
-    // The access is unknown and stays unknown; `write` is only a conservative placeholder so a
-    // code path that forgets the `inferred` basis still fails closed. The guard judges both.
-    access: "write" as const,
-    basis: "inferred" as const,
-    fields,
-  }));
-  return claims.length > 0 ? { kind: "claims", claims } : { kind: "unmapped" };
+  const paths = pathValues(input, fields);
+  if (paths.length === 0) return { kind: "unmapped" };
+  return {
+    kind: "claims",
+    claims: paths.map((path) => ({
+      path,
+      // The access is unknown and stays unknown; `write` is only a conservative placeholder so a
+      // code path that forgets the `inferred` basis still fails closed. The guard judges both.
+      access: "write" as const,
+      basis: "inferred" as const,
+      fields,
+    })),
+  };
 }
 
 /** A Tool whose access the guard would have to infer, for the session-start notice. */
@@ -211,7 +216,7 @@ export function inferredToolAccesses(
 ): InferredToolAccess[] {
   const inferred: InferredToolAccess[] = [];
   for (const tool of tools) {
-    if (coreToolKind(tool.name) !== undefined) continue;
+    if (coreToolFacts(tool.name) !== undefined) continue;
     if (overrides[tool.name] !== undefined) continue;
     const fields = stringFieldNames(tool);
     if (fields.length === 0) continue;

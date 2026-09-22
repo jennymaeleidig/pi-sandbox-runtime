@@ -56,6 +56,21 @@ test("an explicit config entry beats the core Tool table", () => {
   );
 });
 
+test("a declared override whose field matches nothing is unmapped, not 'none'", () => {
+  const inventory = createToolInventory({
+    tools: () => [toolSchema("lint_notes", { path: { type: "string" } })],
+    // "paths" is a typo for the Tool's actual `path` field. Treating the empty result as "touches
+    // nothing" would let the typo lower protection below no config at all.
+    overrides: { lint_notes: { fields: ["paths"], access: "write" } },
+    cwd: "/tmp",
+  });
+
+  assert.deepEqual(
+    inventory.touches({ toolName: "lint_notes", input: { path: "/tmp/x" } }),
+    { kind: "unmapped" },
+  );
+});
+
 test("an unknown Tool with path fields is judged by its schema", () => {
   const inventory = createToolInventory({
     tools: () => [toolSchema("format_md_tables", { path: { type: "string" } })],

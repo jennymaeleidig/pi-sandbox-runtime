@@ -52,13 +52,18 @@ export type Refusal =
 
 const HOME_PREFIX = /^~(?=$|\/)/;
 
+/** Whether a path is spelled `~` or `~/...`; `~user` is left alone. The one home of that rule. */
+export function isHomeRelative(filePath: string): boolean {
+  return HOME_PREFIX.test(filePath);
+}
+
 export function expandPath(filePath: string): string {
   return resolve(filePath.replace(HOME_PREFIX, homedir()));
 }
 
 /** Resolve a possibly-relative, possibly-`~` path against an explicit working directory. */
 function toAbsolute(filePath: string, cwd: string): string {
-  if (HOME_PREFIX.test(filePath)) return expandPath(filePath);
+  if (isHomeRelative(filePath)) return expandPath(filePath);
   return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
 }
 

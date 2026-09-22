@@ -271,6 +271,25 @@ test("a declared access is judged by its own rule set alone, never both", () => 
   );
 });
 
+test("refuses a declared Tool whose path field matched nothing, so a config typo cannot fail open", () => {
+  const writer = toolSchema("mystery_writer", { path: { type: "string" } });
+  const guard = createGuard({
+    policy,
+    tools: () => [writer],
+    // The field name is a typo for the Tool's `path`: the call must be refused, not waved through.
+    overrides: { mystery_writer: { fields: ["paths"], access: "write" } },
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "mystery_writer",
+    input: { path: join(root, "elsewhere", "file.txt") },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /mystery_writer/);
+});
+
 test("denyWrite beats allowWrite", () => {
   const guard = createGuard({
     policy: { ...policy, denyWrite: [join(allowed, "secret.env")] },
