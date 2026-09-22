@@ -61,10 +61,20 @@ export function expandPath(filePath: string): string {
   return resolve(filePath.replace(HOME_PREFIX, homedir()));
 }
 
+/**
+ * Resolve a relative path against an explicit working directory. An absolute path and a
+ * `~`-rooted one already name the same place to the guard and the runtime, so they pass through
+ * (the guard expands `~` itself; the runtime does too). The one home of the relative form.
+ */
+export function resolveIfRelative(filePath: string, cwd: string): string {
+  if (isAbsolute(filePath) || isHomeRelative(filePath)) return filePath;
+  return resolve(cwd, filePath);
+}
+
 /** Resolve a possibly-relative, possibly-`~` path against an explicit working directory. */
 function toAbsolute(filePath: string, cwd: string): string {
   if (isHomeRelative(filePath)) return expandPath(filePath);
-  return isAbsolute(filePath) ? filePath : resolve(cwd, filePath);
+  return resolveIfRelative(filePath, cwd);
 }
 
 /**

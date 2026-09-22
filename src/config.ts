@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { join } from "node:path";
 
 import {
   SandboxRuntimeConfigSchema,
@@ -8,7 +8,7 @@ import {
 
 import type { ToolOverride } from "./claims.ts";
 import type { GuardPolicy } from "./guard.ts";
-import { isHomeRelative } from "./policy.ts";
+import { resolveIfRelative } from "./policy.ts";
 
 /** Config keys the guard owns rather than passing to the runtime. */
 const GUARD_KEYS = new Set(["enabled", "tools"]);
@@ -186,13 +186,6 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
   return dropped;
 }
 
-/** A relative path pattern resolved against an explicit working directory; `~` and absolute
- * forms already name the same place to the guard and the runtime, so they pass through. */
-function absolutizePattern(pattern: string, cwd: string): string {
-  if (isAbsolute(pattern) || isHomeRelative(pattern)) return pattern;
-  return resolve(cwd, pattern);
-}
-
 /**
  * Remove the guard/fence ambiguity: the runtime resolves relative path patterns against ambient
  * `process.cwd()`, while the guard resolves its claims against the session working directory.
@@ -205,7 +198,7 @@ function absolutizePaths(config: Json, cwd: string): void {
     withKey(
       config,
       dotted,
-      patterns.map((pattern) => absolutizePattern(pattern, cwd)),
+      patterns.map((pattern) => resolveIfRelative(pattern, cwd)),
     );
   }
 }

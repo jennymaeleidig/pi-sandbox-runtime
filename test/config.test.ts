@@ -295,6 +295,16 @@ test("refuses a tools map that is not a map of Tool names", () => {
   assert.throws(() => loadGuardConfig(dir), /tools/);
 });
 
+test("refuses a Tool override that is not an object, rather than skipping it", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { format_md_tables: "write" },
+  });
+
+  assert.throws(() => loadGuardConfig(dir), /tools\.format_md_tables/);
+});
+
 test("refuses a Tool override whose fields is missing, naming the Tool", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
