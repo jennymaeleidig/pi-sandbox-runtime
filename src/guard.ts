@@ -1,9 +1,10 @@
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+
 import {
   createToolInventory,
   type Access,
   type ToolCallLike,
   type ToolOverride,
-  type ToolSchema,
 } from "./claims.ts";
 import {
   canonicalizeAgainst,
@@ -33,7 +34,7 @@ export interface GuardOptions {
    * The live Tool list (pi's `getAllTools()`), read per call so a Tool another package registers
    * mid-session is judged like any other rather than refused as `unmapped`.
    */
-  tools: () => readonly ToolSchema[];
+  tools: () => readonly ToolInfo[];
   overrides: Record<string, ToolOverride>;
   cwd: string;
 }

@@ -41,6 +41,9 @@ export default function guardExtension(
   let bashOps: BashOps | undefined;
   let fenceUnavailableReason: string | undefined;
   let status = "guard: not started";
+  // Tools already announced as inferred, so a mid-session registration is reported once.
+  const announcedInferred = new Set<string>();
+  let announceInferred: (() => void) | undefined;
 
   const disabledByFlag = (): boolean => pi.getFlag("no-guard") === true;
 
@@ -61,6 +64,8 @@ export default function guardExtension(
     guard = undefined;
     bashOps = undefined;
     fenceUnavailableReason = undefined;
+    announceInferred = undefined;
+    announcedInferred.clear();
     status = "guard: starting";
 
     if (disabledByFlag()) {
@@ -120,9 +125,16 @@ export default function guardExtension(
       }
 
       // Access the guard had to infer is the one thing a refusal cannot surface when the guess is
-      // permissive, so announce it at session start: this is the trigger for correcting it in config.
-      const inferred = inferredToolAccesses(pi.getAllTools(), config.overrides);
-      if (inferred.length > 0) {
+      // permissive, so announce it: this is the trigger for correcting it in config. Re-run on every
+      // tool call so a Tool registered after session start is announced too.
+      announcedInferred.clear();
+      announceInferred = () => {
+        const inferred = inferredToolAccesses(
+          pi.getAllTools(),
+          config.overrides,
+        ).filter((tool) => !announcedInferred.has(tool.name));
+        if (inferred.length === 0) return;
+        for (const tool of inferred) announcedInferred.add(tool.name);
         const summary = inferred
           .map((tool) => `${tool.name} (fields: ${tool.fields.join(", ")})`)
           .join("; ");
@@ -130,7 +142,8 @@ export default function guardExtension(
           `guard: access inferred for ${inferred.length} Tool(s) — ${summary}. Each is judged against both the read and write rules until declared in \`tools\`.`,
           "warning",
         );
-      }
+      };
+      announceInferred();
 
       // The sandboxed shell tools are registered per session so they capture this session's cwd.
       // Every shell Tool pi offers goes through the adapter: the point of this package is that no
@@ -194,6 +207,10 @@ export default function guardExtension(
         };
       }
       if (guard === undefined) return undefined;
+
+      // A Tool another package registers mid-session is judged but would otherwise never be
+      // announced, so re-check here: this is what keeps the misclassification remedy reachable.
+      announceInferred?.();
 
       return guard({ toolName: event.toolName, input: { ...event.input } });
     },

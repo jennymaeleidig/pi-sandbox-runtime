@@ -1,20 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
+
 import {
   createToolInventory,
   inferredToolAccesses,
   needsLiveFence,
-  type ToolSchema,
 } from "../src/claims.ts";
-
-/** A Tool contributed by another pi-package, as pi advertises it via `getAllTools()`. */
-function toolSchema(
-  name: string,
-  properties: Record<string, { type?: unknown }>,
-): ToolSchema {
-  return { name, parameters: { properties } };
-}
+import { toolSchema } from "./tool-info.ts";
 
 test("the kind table is the one home of the Shell Tool fact", () => {
   assert.equal(needsLiveFence("bash"), true);
@@ -111,7 +105,7 @@ test("an unknown Tool with no path field is unmapped, the fail-closed arm", () =
 });
 
 test("the provider is read per call, so a Tool that appears later is judged", () => {
-  let tools: ToolSchema[] = [];
+  let tools: ToolInfo[] = [];
   const inventory = createToolInventory({
     tools: () => tools,
     overrides: {},

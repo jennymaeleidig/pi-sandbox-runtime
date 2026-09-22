@@ -10,8 +10,9 @@ import {
   type GuardPolicy,
   type ToolCallLike,
 } from "../src/guard.ts";
-import type { ToolSchema } from "../src/claims.ts";
+import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import { canonicalizePath, type CanonicalPath } from "../src/policy.ts";
+import { toolSchema } from "./tool-info.ts";
 
 const root = mkdtempSync(join(tmpdir(), "guard-"));
 const allowed = join(root, "allowed");
@@ -147,14 +148,6 @@ test("refuses an extension Tool that only reads inside a denied region", () => {
   assert.match(decision.reason ?? "", /read/);
   assert.match(decision.reason ?? "", /denyRead/);
 });
-
-/** A Tool contributed by another pi-package, as pi advertises it via `getAllTools()`. */
-function toolSchema(
-  name: string,
-  properties: Record<string, { type?: unknown }>,
-): ToolSchema {
-  return { name, parameters: { properties } };
-}
 
 const formatter = toolSchema("format_md_tables", { path: { type: "string" } });
 
@@ -356,7 +349,7 @@ test("refuses a Tool it has no schema for at all", () => {
 });
 
 test("judges a Tool that appears in the provider after the guard is built", () => {
-  let tools: ToolSchema[] = [];
+  let tools: ToolInfo[] = [];
   const guard = createGuard({
     policy,
     tools: () => tools,

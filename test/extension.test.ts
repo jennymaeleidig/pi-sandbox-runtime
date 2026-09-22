@@ -11,6 +11,7 @@ import type {
 
 import guardExtension from "../src/extension.ts";
 import type { SandboxRuntime } from "../src/sandbox.ts";
+import { toolSchema } from "./tool-info.ts";
 
 const agentDir = mkdtempSync(join(tmpdir(), "guard-ext-agent-"));
 const cwd = mkdtempSync(join(tmpdir(), "guard-ext-cwd-"));
@@ -204,6 +205,33 @@ test("notices which Tools have an inferred access, so a wrong guess is discovera
         entry.kind === "warning" &&
         /inferred/.test(entry.message) &&
         /format_md_tables/.test(entry.message),
+    ),
+    JSON.stringify(host.notifications),
+  );
+});
+
+test("notices a Tool whose access is inferred only after the session starts", async () => {
+  writeConfig(validConfig);
+  const tools = [toolSchema("read", { path: { type: "string" } })];
+  const host = fakePi({ tools });
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+  await startSession(host);
+
+  assert.equal(
+    host.notifications.filter((entry) => /inferred/.test(entry.message)).length,
+    0,
+  );
+
+  // A package registered after session start: it must still be announced.
+  tools.push(toolSchema("later_formatter", { path: { type: "string" } }));
+  await host.call("tool_call", readCall(join(allowed, "file.txt")));
+
+  assert.ok(
+    host.notifications.some(
+      (entry) =>
+        entry.kind === "warning" &&
+        /inferred/.test(entry.message) &&
+        /later_formatter/.test(entry.message),
     ),
     JSON.stringify(host.notifications),
   );

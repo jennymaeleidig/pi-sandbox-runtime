@@ -9,7 +9,7 @@ import {
   compilePathPolicy,
   type CanonicalClaim,
   type CanonicalPath,
-  type PathRules,
+  type PathRegions,
 } from "../src/policy.ts";
 
 const root = mkdtempSync(join(tmpdir(), "policy-"));
@@ -18,7 +18,7 @@ const denied = join(root, "denied");
 mkdirSync(allowed);
 mkdirSync(denied);
 
-const emptyRules: PathRules = {
+const emptyRules: PathRegions = {
   allowRead: [],
   denyRead: [],
   allowWrite: [],

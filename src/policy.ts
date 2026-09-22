@@ -36,7 +36,7 @@ export interface CanonicalClaim {
 }
 
 /** The path regions of the guard policy, without the domain lists. */
-export interface PathRules {
+export interface PathRegions {
   allowRead: string[];
   denyRead: string[];
   allowWrite: string[];
@@ -165,7 +165,7 @@ function denyOutranksAllow(
  * canonicalization. `undefined` means allowed.
  */
 export function compilePathPolicy(
-  rules: PathRules,
+  rules: PathRegions,
   cwd: string,
 ): (claim: CanonicalClaim) => Refusal | undefined {
   const allowRead = rules.allowRead.map((pattern) =>

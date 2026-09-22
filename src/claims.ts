@@ -5,11 +5,6 @@ export type Access = "read" | "write";
 /** Whether a claim's access was declared by config or the core table, or inferred by introspection. */
 export type AccessBasis = "declared" | "inferred";
 
-/** The only part of a Tool's advertised schema the guard consumes; pi's `ToolInfo` satisfies it. */
-export type ToolSchema = Pick<ToolInfo, "name"> & {
-  parameters: { properties?: Record<string, { type?: unknown }> };
-};
-
 export interface Claim {
   path: string;
   access: Access;
@@ -103,8 +98,22 @@ function pathValues(
   return paths;
 }
 
-function stringFieldNames(tool: ToolSchema): string[] {
-  const properties = tool.parameters.properties;
+/**
+ * pi types a Tool's `parameters` as an opaque schema, so this is the one place that reads its
+ * `properties` bag. Everything else depends on the narrowed bag, not on pi's `TSchema`.
+ */
+function toolProperties(
+  tool: ToolInfo,
+): Record<string, { type?: unknown }> | undefined {
+  const parameters: unknown = tool.parameters;
+  if (typeof parameters !== "object" || parameters === null) return undefined;
+  const properties = (parameters as { properties?: unknown }).properties;
+  if (typeof properties !== "object" || properties === null) return undefined;
+  return properties as Record<string, { type?: unknown }>;
+}
+
+function stringFieldNames(tool: ToolInfo): string[] {
+  const properties = toolProperties(tool);
   if (properties === undefined) return [];
   return Object.entries(properties)
     .filter(([name, schema]) => {
@@ -130,7 +139,7 @@ function stringFieldNames(tool: ToolSchema): string[] {
 function mapToolCall(
   toolName: string,
   input: Record<string, unknown>,
-  tools: readonly ToolSchema[],
+  tools: readonly ToolInfo[],
   overrides: Record<string, ToolOverride>,
   cwd: string,
 ): ClaimResult {
@@ -211,7 +220,7 @@ export interface InferredToolAccess {
  * discoverable, which a refusal alone can never do.
  */
 export function inferredToolAccesses(
-  tools: readonly ToolSchema[],
+  tools: readonly ToolInfo[],
   overrides: Record<string, ToolOverride>,
 ): InferredToolAccess[] {
   const inferred: InferredToolAccess[] = [];
@@ -227,7 +236,7 @@ export function inferredToolAccesses(
 
 export interface ToolInventoryDeps {
   /** The live Tool list, read per call so a Tool registered mid-session is judged, not refused. */
-  tools: () => readonly ToolSchema[];
+  tools: () => readonly ToolInfo[];
   overrides: Record<string, ToolOverride>;
   cwd: string;
 }
