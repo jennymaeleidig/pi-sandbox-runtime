@@ -227,16 +227,20 @@ function toolsOverrides(config: Json): Record<string, ToolOverride> {
     if (!isJsonObject(value)) {
       throw new Error(`sandbox.json: tools.${name} must be an object`);
     }
-    const fields = value["fields"];
-    if (!Array.isArray(fields) || !fields.every((f) => typeof f === "string")) {
-      throw new Error(
-        `sandbox.json: tools.${name}.fields must be an array of strings`,
-      );
-    }
     const access = value["access"];
     if (access !== "read" && access !== "write" && access !== "none") {
       throw new Error(
         `sandbox.json: tools.${name}.access must be one of "read", "write", "none"`,
+      );
+    }
+    // `access: "none"` says the Tool touches no paths, so it needs no fields: an absent `fields`
+    // key is the documented spelling of that, alongside `fields: []`.
+    const rawFields = value["fields"];
+    const fields =
+      rawFields === undefined && access === "none" ? [] : rawFields;
+    if (!Array.isArray(fields) || !fields.every((f) => typeof f === "string")) {
+      throw new Error(
+        `sandbox.json: tools.${name}.fields must be an array of strings`,
       );
     }
     // An override that names no fields, yet declares an access, would be judged as touching no

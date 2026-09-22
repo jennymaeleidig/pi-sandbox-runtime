@@ -152,13 +152,9 @@ function stringFieldNames(tool: ToolInfo): string[] {
  * writes them, because that is semantic and not derivable from a name. Such a claim is marked
  * inferred and the guard judges it against both rule sets.
  */
-function mapToolCall(
-  toolName: string,
-  input: Record<string, unknown>,
-  tools: readonly ToolInfo[],
-  overrides: Record<string, ToolOverride>,
-  cwd: string,
-): ClaimResult {
+function mapToolCall(call: ToolCallLike, deps: ToolInventoryDeps): ClaimResult {
+  const { toolName, input } = call;
+  const { overrides, cwd } = deps;
   if (needsLiveFence(toolName)) {
     const command = input["command"];
     return {
@@ -203,7 +199,7 @@ function mapToolCall(
     };
   }
 
-  const tool = tools.find((candidate) => candidate.name === toolName);
+  const tool = deps.tools().find((candidate) => candidate.name === toolName);
   if (tool === undefined) return { kind: "unmapped" };
 
   const fields = stringFieldNames(tool);
@@ -251,7 +247,7 @@ export function inferredToolAccesses(
 }
 
 export interface ToolInventoryDeps {
-  /** The live Tool list, read per call so a Tool registered mid-session is judged, not refused. */
+  /** The live Tool inventory, read per call so a Tool registered mid-session is judged, not refused. */
   tools: () => readonly ToolInfo[];
   overrides: Record<string, ToolOverride>;
   cwd: string;
@@ -259,13 +255,6 @@ export interface ToolInventoryDeps {
 
 export function createToolInventory(deps: ToolInventoryDeps): ToolInventory {
   return {
-    touches: (call) =>
-      mapToolCall(
-        call.toolName,
-        call.input,
-        deps.tools(),
-        deps.overrides,
-        deps.cwd,
-      ),
+    touches: (call) => mapToolCall(call, deps),
   };
 }

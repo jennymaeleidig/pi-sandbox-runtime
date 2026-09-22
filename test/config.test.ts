@@ -338,6 +338,18 @@ test("accepts access none with empty fields, the deliberate touches-nothing form
   });
 });
 
+test("accepts access none with no fields key at all, since it names no paths", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { legacy_notes: { access: "none" } },
+  });
+
+  assert.deepEqual(loadGuardConfig(dir).overrides, {
+    legacy_notes: { fields: [], access: "none" },
+  });
+});
+
 test("an absent config file is not an error", () => {
   const dir = fixtureDir();
 

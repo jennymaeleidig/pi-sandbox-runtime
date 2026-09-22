@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -333,7 +333,22 @@ test("fences every command kind, not just bash, before the sandbox is running", 
   assert.match(decision.reason ?? "", /not running/);
 });
 
-test("grantholders: /guard-allow admits a refused path for the session", async () => {
+test("the extension derives the fence fact from the kind table, with no second list", () => {
+  const source = readFileSync(
+    new URL("../src/extension.ts", import.meta.url),
+    "utf-8",
+  );
+
+  // The extension must ask the kind table rather than name Shell Tools itself.
+  assert.match(source, /needsLiveFence\(/);
+  assert.match(
+    source,
+    /import\s*\{[^}]*needsLiveFence[^}]*\}\s*from\s*"\.\/claims\.ts"/,
+  );
+  assert.doesNotMatch(source, /"(bash|powershell)"/);
+});
+
+test("grants: /guard-allow admits a refused path for the session", async () => {
   writeConfig(validConfig);
   const host = fakePi();
   guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
@@ -350,7 +365,7 @@ test("grantholders: /guard-allow admits a refused path for the session", async (
   assert.deepEqual(await host.call("tool_call", readCall(path)), {});
 });
 
-test("grantholders: /guard-allow refuses a glob instead of granting a pattern", async () => {
+test("grants: /guard-allow refuses a glob instead of granting a pattern", async () => {
   writeConfig(validConfig);
   const host = fakePi();
   guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
@@ -374,7 +389,7 @@ test("grantholders: /guard-allow refuses a glob instead of granting a pattern", 
   );
 });
 
-test("grantholders: /guard-allow tool:<name> admits an unmapped Tool", async () => {
+test("grants: /guard-allow tool:<name> admits an unmapped Tool", async () => {
   writeConfig(validConfig);
   const host = fakePi();
   guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });

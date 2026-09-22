@@ -32,8 +32,8 @@ export interface GuardPolicy {
 export interface GuardOptions {
   policy: GuardPolicy;
   /**
-   * The live Tool list (pi's `getAllTools()`), read per call so a Tool another package registers
-   * mid-session is judged like any other rather than refused as `unmapped`.
+   * The live Tool inventory (pi's `getAllTools()`), read per call so a Tool another package
+   * registers mid-session is judged like any other rather than refused as `unmapped`.
    */
   tools: () => readonly ToolInfo[];
   overrides: Record<string, ToolOverride>;
@@ -83,7 +83,7 @@ export function unjudgeableDecision(
   if (cause.kind === "unmapped") {
     return {
       block: true,
-      reason: `Guard refused tool "${toolName}": no path in this call could be judged against the policy. Declare the Tool in the guard's \`tools\` config with its path fields and access.`,
+      reason: `Guard refused tool "${toolName}": no path in this call could be judged against the guard policy. Declare the Tool in the guard's \`tools\` config with its path fields and access.`,
     };
   }
   return {
@@ -92,7 +92,7 @@ export function unjudgeableDecision(
   };
 }
 
-/** The prose for a structured refusal. The wording lives with the presentation, not the policy. */
+/** The prose for a structured refusal. The wording lives with the presentation, not the path policy. */
 function refusalReason(
   refusal: Exclude<Refusal, { rule: "malformed-claim" }>,
 ): string {
@@ -125,7 +125,7 @@ function refusalMessage(
   return `${refused}. Its access was inferred, not declared: declare it in the guard's \`tools\` config as {"fields": [${fields}]} with access "read" or "write". ${grant}`;
 }
 
-/** The first domain a command names that the policy does not allow, if any. */
+/** The first domain a command names that the guard policy does not allow, if any. */
 function refusedDomain(
   command: string,
   policy: GuardPolicy,
@@ -135,11 +135,6 @@ function refusedDomain(
     if (!domainIsAllowed(domain, policy.allowedDomains)) return domain;
   }
   return undefined;
-}
-
-/** Whether a grant excuses a canonical claim: it names the claim, or a directory above it. */
-function withinGrant(path: string, granted: string): boolean {
-  return pathIsWithin(path, granted);
 }
 
 /**
@@ -157,7 +152,7 @@ export function createGuard(options: GuardOptions): Guard {
   const grantedTools = new Set<string>();
 
   const isGranted = (claim: CanonicalClaim): boolean =>
-    [...grantedPaths].some((granted) => withinGrant(claim.path, granted));
+    [...grantedPaths].some((granted) => pathIsWithin(claim.path, granted));
 
   const guard = (event: ToolCallLike): GuardDecision => {
     if (grantedTools.has(event.toolName)) return {};

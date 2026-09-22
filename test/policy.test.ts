@@ -2,7 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, symlinkSync, unlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 
 import {
   canonicalizeAgainst,
@@ -11,6 +11,7 @@ import {
   type CanonicalPath,
   type PathRegions,
 } from "../src/policy.ts";
+import type { Access } from "../src/claims.ts";
 
 const root = mkdtempSync(join(tmpdir(), "policy-"));
 const allowed = join(root, "allowed");
@@ -27,7 +28,7 @@ const emptyRules: PathRegions = {
 
 function claim(
   path: string,
-  access: "read" | "write",
+  access: Access,
   cwd: string = root,
 ): CanonicalClaim {
   return { path: canonicalizeAgainst(path, cwd), access, basis: "declared" };
@@ -155,6 +156,22 @@ test("fails closed on a claim that was cast past the canonical brand", () => {
 
   const refusal = judge({
     path: "relative/not-canonical" as CanonicalPath,
+    access: "read",
+    basis: "declared",
+  });
+
+  assert.equal(refusal?.rule, "malformed-claim");
+});
+
+test("fails closed on an absolute but uncanonical claim", () => {
+  // Built by concatenation: `join` would normalize the `..` this test needs. Lexically the path
+  // escapes the deny region, but canonically it resolves inside it — the fail-open the brand's
+  // runtime backstop exists to stop, so it must refuse rather than match-and-allow.
+  const escaped = `${allowed}/../${basename(denied)}/file.txt`;
+  const judge = compilePathPolicy({ ...emptyRules, denyRead: [denied] }, root);
+
+  const refusal = judge({
+    path: escaped as CanonicalPath,
     access: "read",
     basis: "declared",
   });

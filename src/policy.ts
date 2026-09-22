@@ -14,7 +14,7 @@
 
 import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
-import { basename, dirname, isAbsolute, resolve } from "node:path";
+import { basename, dirname, isAbsolute, normalize, resolve } from "node:path";
 
 import type { Access, AccessBasis, Claim } from "./claims.ts";
 
@@ -189,8 +189,12 @@ export function compilePathPolicy(
 
   return (claim) => {
     // A caller that cast past the brand can hand us a path we never resolved; judging it would let
-    // it fail to match a region and then be allowed by the read default-open, so refuse instead.
-    if (!isAbsolute(claim.path)) return { rule: "malformed-claim", claim };
+    // it fail to match a region and then be allowed by the read default-open, so refuse instead. An
+    // absolute path still fails this if it is uncanonical: `normalize` is cheap and catches a `..`
+    // segment that lexically escapes the region it canonically resolves into.
+    if (!isAbsolute(claim.path) || normalize(claim.path) !== claim.path) {
+      return { rule: "malformed-claim", claim };
+    }
 
     if (claim.access === "read") {
       const denies = denyRead.filter((pattern) => matches(claim.path, pattern));
