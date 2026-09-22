@@ -43,10 +43,11 @@ test("reads the filesystem and network policy out of the existing config file", 
 
   const config = loadGuardConfig(dir);
 
+  // Relative patterns are absolutized against the session cwd, so the guard and the OS fence agree.
   assert.deepEqual(config.policy.allowedDomains, ["github.com"]);
   assert.deepEqual(config.policy.denyRead, ["/Users"]);
-  assert.deepEqual(config.policy.allowWrite, ["."]);
-  assert.deepEqual(config.policy.denyWrite, [".env"]);
+  assert.deepEqual(config.policy.allowWrite, [dir.cwd]);
+  assert.deepEqual(config.policy.denyWrite, [join(dir.cwd, ".env")]);
 });
 
 test("unions the layers so a project file cannot drop a global denyRead", () => {
@@ -72,21 +73,22 @@ test("unions the layers so a project file cannot drop a global denyRead", () => 
 
   const config = loadGuardConfig(dir);
 
-  // Both layers, guard and OS fence, must see the same effective policy.
+  // Both layers, guard and OS fence, must see the same effective policy. Relative spellings are
+  // absolutized against the session cwd; `~` is left for each consumer to expand.
   assert.deepEqual(
     config.policy.denyRead,
     ["/Users"],
     "the global denyRead must survive",
   );
   assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users"]);
-  assert.deepEqual(config.policy.allowRead, ["~/secrets", "."]);
-  assert.deepEqual(config.runtime.filesystem.allowRead, ["~/secrets", "."]);
+  assert.deepEqual(config.policy.allowRead, ["~/secrets", dir.cwd]);
+  assert.deepEqual(config.runtime.filesystem.allowRead, ["~/secrets", dir.cwd]);
   assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
   assert.deepEqual(config.runtime.network.allowedDomains, [
     "github.com",
     "npmjs.org",
   ]);
-  assert.deepEqual(config.policy.denyWrite, [".env"]);
+  assert.deepEqual(config.policy.denyWrite, [join(dir.cwd, ".env")]);
 });
 
 test("supplies the denyRead default the config file omits, so the home root stays denied", () => {
@@ -120,8 +122,55 @@ test("merges a project config over the global one, unioning the path lists", () 
   const config = loadGuardConfig(dir);
 
   assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
-  assert.deepEqual(config.policy.allowRead, [".", "/opt"]);
-  assert.deepEqual(config.policy.allowWrite, [".", "/tmp"]);
+  assert.deepEqual(config.policy.allowRead, [dir.cwd, "/opt"]);
+  assert.deepEqual(config.policy.allowWrite, [dir.cwd, "/tmp"]);
+});
+
+test("absolutizes relative path patterns against the session cwd, so the fence cannot diverge", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    network: { allowedDomains: ["github.com"] },
+    filesystem: {
+      denyRead: [],
+      allowRead: ["."],
+      allowWrite: ["sub/dir"],
+      denyWrite: [".env"],
+    },
+  });
+
+  const config = loadGuardConfig(dir);
+
+  assert.deepEqual(config.runtime.filesystem.allowRead, [dir.cwd]);
+  assert.deepEqual(config.runtime.filesystem.allowWrite, [
+    join(dir.cwd, "sub/dir"),
+  ]);
+  assert.deepEqual(config.runtime.filesystem.denyWrite, [
+    join(dir.cwd, ".env"),
+  ]);
+  // The guard reads the same absolutized object, so both name one region.
+  assert.deepEqual(
+    config.policy.allowRead,
+    config.runtime.filesystem.allowRead,
+  );
+});
+
+test("leaves domains, absolute paths and `~` patterns unrewritten", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    network: { allowedDomains: ["github.com"], deniedDomains: ["evil.test"] },
+    filesystem: {
+      denyRead: ["/Users", "~/secrets"],
+      allowRead: [],
+      allowWrite: [],
+      denyWrite: [],
+    },
+  });
+
+  const config = loadGuardConfig(dir);
+
+  assert.deepEqual(config.runtime.network.allowedDomains, ["github.com"]);
+  assert.deepEqual(config.runtime.network.deniedDomains, ["evil.test"]);
+  assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users", "~/secrets"]);
 });
 
 test("hard-errors on an unrecognised key, so a typo cannot look like protection", () => {

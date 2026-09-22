@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { isAbsolute, join, resolve } from "node:path";
 
 import {
   SandboxRuntimeConfigSchema,
@@ -54,6 +54,19 @@ const ARRAY_KEYS = [
   "filesystem.allowWrite",
   "filesystem.denyWrite",
 ] as const;
+
+/**
+ * The path lists, whose relative spellings the guard and the OS fence would otherwise resolve
+ * against different working directories. Domain lists must never be rewritten this way.
+ */
+const PATH_KEYS = [
+  "filesystem.allowRead",
+  "filesystem.denyRead",
+  "filesystem.allowWrite",
+  "filesystem.denyWrite",
+] as const;
+
+const HOME_PREFIX = /^~(?=$|\/)/;
 
 export interface GuardConfig {
   enabled: boolean;
@@ -174,6 +187,30 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
   return dropped;
 }
 
+/** A relative path pattern resolved against an explicit working directory; `~` and absolute
+ * forms already name the same place to the guard and the runtime, so they pass through. */
+function absolutizePattern(pattern: string, cwd: string): string {
+  if (isAbsolute(pattern) || HOME_PREFIX.test(pattern)) return pattern;
+  return resolve(cwd, pattern);
+}
+
+/**
+ * Remove the guard/fence ambiguity: the runtime resolves relative path patterns against ambient
+ * `process.cwd()`, while the guard resolves its claims against the session working directory.
+ * Rewriting the path lists here means both name the same region. Domain lists are never touched.
+ */
+function absolutizePaths(config: Json, cwd: string): void {
+  for (const dotted of PATH_KEYS) {
+    const patterns = stringArray(layerValue(config, dotted));
+    if (patterns === undefined) continue;
+    withKey(
+      config,
+      dotted,
+      patterns.map((pattern) => absolutizePattern(pattern, cwd)),
+    );
+  }
+}
+
 /** A `tools` map that is not a map of Tool names cannot be honoured, and must not be ignored. */
 function assertToolsMapIsAnObject(config: Json, path: string): void {
   const tools = config["tools"];
@@ -232,6 +269,9 @@ export function loadGuardConfig(paths: {
   assertToolsMapIsAnObject(projectConfig, projectPath);
 
   const supplied = mergedConfig(globalConfig, projectConfig);
+  // Do this before the runtime schema is validated, so the guard policy and the runtime config are
+  // read off the same absolutized object and cannot name different regions.
+  absolutizePaths(supplied, paths.cwd);
 
   const suppliedNetwork = objectAt(supplied, "network");
   const suppliedFilesystem = objectAt(supplied, "filesystem");

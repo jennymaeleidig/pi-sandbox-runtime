@@ -1,21 +1,20 @@
-import { resolve } from "node:path";
-
 import {
-  canonicalClaims,
   createToolInventory,
   type Claim,
   type ToolCallLike,
   type ToolOverride,
   type ToolSchema,
 } from "./claims.ts";
-
-export type { ToolCallLike } from "./claims.ts";
 import {
-  canonicalizePath,
+  canonicalizeAgainst,
+  canonicalizeClaims,
+  compilePathPolicy,
   domainIsAllowed,
   extractDomainsFromCommand,
-  matchesPattern,
+  type Refusal,
 } from "./policy.ts";
+
+export type { ToolCallLike } from "./claims.ts";
 
 export interface GuardPolicy {
   allowRead: string[];
@@ -60,57 +59,18 @@ export interface Guard {
   grants(): { paths: string[]; tools: string[] };
 }
 
-type Outcome = { allowed: true } | { allowed: false; reason: string };
-
-/**
- * Whether a `denyRead` pattern outranks an `allowRead` pattern that also matches.
- *
- * Upstream reads are deny-then-allow: `allowRead` takes precedence over `denyRead`, the opposite of
- * writes, but a denial aimed at particular files stays denied. So a wildcard deny always wins, while
- * a literal deny yields only to an allowance *beneath* the region it denies — `denyRead: ["/Users"]`
- * with `allowRead: ["."]` re-opens the working directory, but a deny naming a path deeper than the
- * allowance keeps it shut.
- */
-function denyOutranksAllow(deny: string, allow: string): boolean {
-  if (deny.includes("*")) return true;
-  const denied = canonicalizePath(deny);
-  const allowed = canonicalizePath(allow);
-  return !(allowed === denied || allowed.startsWith(denied + "/"));
-}
-
-/**
- * The read rule, matching the OS fence: denied regions, re-opened by an allowance beneath them.
- *
- * A path that is merely writable is not readable — a read is judged by the read rules alone, so
- * being allowed to write somewhere never widens what can be read.
- */
-function decideRead(path: string, policy: GuardPolicy): Outcome {
-  const denies = policy.denyRead.filter((pattern) =>
-    matchesPattern(path, [pattern]),
-  );
-  if (denies.length === 0) return { allowed: true };
-  const allows = policy.allowRead.filter((pattern) =>
-    matchesPattern(path, [pattern]),
-  );
-  const reAllowed = allows.some((allow) =>
-    denies.every((deny) => !denyOutranksAllow(deny, allow)),
-  );
-  if (reAllowed) return { allowed: true };
-  return { allowed: false, reason: "it falls inside a denyRead region" };
-}
-
-function decideWrite(path: string, policy: GuardPolicy): Outcome {
-  if (matchesPattern(path, policy.denyWrite)) {
-    return { allowed: false, reason: "it falls inside a denyWrite region" };
+/** The prose for a structured refusal. The wording lives with the presentation, not the policy. */
+function refusalReason(refusal: Refusal): string {
+  switch (refusal.rule) {
+    case "denyRead":
+      return "it falls inside a denyRead region";
+    case "denyWrite":
+      return "it falls inside a denyWrite region";
+    case "allowWrite":
+      return "it is not in allowWrite";
+    case "malformed-claim":
+      return "the claim was not canonicalized, so it could not be judged";
   }
-  if (matchesPattern(path, policy.allowWrite)) return { allowed: true };
-  return { allowed: false, reason: "it is not in allowWrite" };
-}
-
-function decideClaim(claim: Claim, policy: GuardPolicy): Outcome {
-  return claim.access === "read"
-    ? decideRead(claim.path, policy)
-    : decideWrite(claim.path, policy);
 }
 
 /** The first domain a command names that the policy does not allow, if any. */
@@ -125,6 +85,12 @@ function refusedDomain(
   return undefined;
 }
 
+/** Whether a grant excuses a canonical claim: it names the claim, or a directory above it. */
+function withinGrant(path: string, granted: string): boolean {
+  const separator = granted.endsWith("/") ? "" : "/";
+  return path === granted || path.startsWith(granted + separator);
+}
+
 /**
  * Build the `tool_call` handler: the guard's single seam.
  *
@@ -134,11 +100,13 @@ function refusedDomain(
 export function createGuard(options: GuardOptions): Guard {
   const { policy, tools, overrides, cwd } = options;
   const inventory = createToolInventory({ tools, overrides, cwd });
+  // Built once: judging a claim must not re-canonicalize the patterns or touch the filesystem.
+  const judge = compilePathPolicy(policy, cwd);
   const grantedPaths = new Set<string>();
   const grantedTools = new Set<string>();
 
   const isGranted = (claim: Claim): boolean =>
-    matchesPattern(claim.path, [...grantedPaths]);
+    [...grantedPaths].some((granted) => withinGrant(claim.path, granted));
 
   const guard = (event: ToolCallLike): GuardDecision => {
     if (grantedTools.has(event.toolName)) return {};
@@ -169,13 +137,13 @@ export function createGuard(options: GuardOptions): Guard {
 
     if (mapped.kind !== "claims") return {};
 
-    for (const claim of canonicalClaims(mapped.claims, cwd)) {
+    for (const claim of canonicalizeClaims(mapped.claims, cwd)) {
       if (isGranted(claim)) continue;
-      const outcome = decideClaim(claim, policy);
-      if (!outcome.allowed) {
+      const refusal = judge(claim);
+      if (refusal !== undefined) {
         return {
           block: true,
-          reason: `Guard refused ${claim.access} of "${claim.path}" by tool "${event.toolName}": ${outcome.reason}. Grant it for this session with /guard-allow ${claim.path}`,
+          reason: `Guard refused ${claim.access} of "${claim.path}" by tool "${event.toolName}": ${refusalReason(refusal)}. Grant it for this session with /guard-allow ${claim.path}`,
         };
       }
     }
@@ -186,7 +154,7 @@ export function createGuard(options: GuardOptions): Guard {
   guard.grantPath = (path: string): void => {
     // Resolved against the session's cwd and canonicalized, so a grant and the claim it excuses
     // are compared in the same form.
-    grantedPaths.add(canonicalizePath(resolve(cwd, path)));
+    grantedPaths.add(canonicalizeAgainst(path, cwd));
   };
   guard.grantTool = (toolName: string): void => {
     grantedTools.add(toolName);

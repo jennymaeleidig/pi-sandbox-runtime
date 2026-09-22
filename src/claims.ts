@@ -1,8 +1,4 @@
-import { resolve } from "node:path";
-
 import type { ToolInfo } from "@earendil-works/pi-coding-agent";
-
-import { canonicalizePath } from "./policy.ts";
 
 export type Access = "read" | "write";
 
@@ -198,18 +194,6 @@ function mapToolCall(
     access,
   }));
   return claims.length > 0 ? { kind: "claims", claims } : { kind: "unmapped" };
-}
-
-export function canonicalClaims(
-  claims: readonly Claim[],
-  cwd: string,
-): Claim[] {
-  // Resolved against the session's working directory, so a relative claim and the grant that excuses
-  // it are compared in one form.
-  return claims.map((claim) => ({
-    path: canonicalizePath(resolve(cwd, claim.path)),
-    access: claim.access,
-  }));
 }
 
 export interface ToolInventoryDeps {
