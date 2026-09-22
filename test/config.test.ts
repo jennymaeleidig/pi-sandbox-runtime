@@ -147,6 +147,46 @@ test("reads the guard's own tools map", () => {
   });
 });
 
+test("adds a project tools map to the global one instead of replacing it", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    network: { allowedDomains: [] },
+    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    tools: {
+      format_md_tables: { fields: ["path"], access: "write" },
+      legacy_notes: { fields: [], access: "none" },
+    },
+  });
+  writeProject(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: {
+      format_md_tables: { fields: ["out"], access: "read" },
+      project_only: { fields: ["path"], access: "read" },
+    },
+  });
+
+  const config = loadGuardConfig(dir);
+
+  assert.deepEqual(config.overrides, {
+    // The project's entry for a Tool the global file already describes wins.
+    format_md_tables: { fields: ["out"], access: "read" },
+    // But it does not delete the global entries beside it.
+    legacy_notes: { fields: [], access: "none" },
+    project_only: { fields: ["path"], access: "read" },
+  });
+});
+
+test("refuses a tools map that is not a map of Tool names", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    network: { allowedDomains: [] },
+    filesystem: { denyRead: [], allowRead: ["."], allowWrite: ["."], denyWrite: [] },
+    tools: ["format_md_tables"],
+  });
+
+  assert.throws(() => loadGuardConfig(dir), /tools/);
+});
+
 test("an absent config file is not an error", () => {
   const dir = fixtureDir();
 

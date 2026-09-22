@@ -129,6 +129,10 @@ function mergedConfig(globalConfig: Json, projectConfig: Json): Json {
     const union = unionList(globalConfig, projectConfig, dotted);
     if (union !== undefined) withKey(merged, dotted, union);
   }
+  // The `tools` map layers per Tool: a project entry for one Tool must not delete the global entries
+  // beside it, which is what the plain spread above would do.
+  const tools = { ...objectAt(globalConfig, "tools"), ...objectAt(projectConfig, "tools") };
+  if (Object.keys(tools).length > 0) merged["tools"] = tools;
   return merged;
 }
 
@@ -152,6 +156,14 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
     }
   }
   return dropped;
+}
+
+/** A `tools` map that is not a map of Tool names cannot be honoured, and must not be ignored. */
+function assertToolsMapIsAnObject(config: Json, path: string): void {
+  const tools = config["tools"];
+  if (tools !== undefined && !isJsonObject(tools)) {
+    throw new Error(`${path}: "tools" must be an object mapping Tool names to overrides`);
+  }
 }
 
 function toolsOverrides(config: Json): Record<string, ToolOverride> {
@@ -180,6 +192,8 @@ export function loadGuardConfig(paths: { agentDir: string; cwd: string }): Guard
   const projectPath = join(paths.cwd, ".pi", "sandbox.json");
   const globalConfig = readConfigFile(globalPath);
   const projectConfig = readConfigFile(projectPath);
+  assertToolsMapIsAnObject(globalConfig, globalPath);
+  assertToolsMapIsAnObject(projectConfig, projectPath);
 
   const supplied = mergedConfig(globalConfig, projectConfig);
 
