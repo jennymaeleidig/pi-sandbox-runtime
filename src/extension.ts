@@ -13,8 +13,8 @@ import {
 } from "@earendil-works/pi-coding-agent";
 
 import { inferredToolAccesses, needsLiveFence } from "./claims.ts";
-import { loadGuardConfig } from "./config.ts";
-import { createGuard, type Guard } from "./guard.ts";
+import { loadGuardConfig, type GuardConfig } from "./config.ts";
+import { createGuard, type Guard, type GuardPolicy } from "./guard.ts";
 import {
   createSandboxRuntime,
   createSandboxedBashOps,
@@ -31,6 +31,20 @@ export interface GuardExtensionDeps {
   platform?: NodeJS.Platform;
 }
 
+/** The loaded policy, one facet per clause, for the `/guard` report. */
+function describePolicy(policy: GuardPolicy): string {
+  const list = (items: readonly string[]): string =>
+    items.length > 0 ? items.join(", ") : "(none)";
+  return [
+    `allowRead [${list(policy.allowRead)}]`,
+    `denyRead [${list(policy.denyRead)}]`,
+    `allowWrite [${list(policy.allowWrite)}]`,
+    `denyWrite [${list(policy.denyWrite)}]`,
+    `allowedDomains [${list(policy.allowedDomains)}]`,
+    `deniedDomains [${list(policy.deniedDomains ?? [])}]`,
+  ].join("; ");
+}
+
 export default function guardExtension(
   pi: ExtensionAPI,
   deps: GuardExtensionDeps = {},
@@ -40,6 +54,7 @@ export default function guardExtension(
   let guard: Guard | undefined;
   let bashOps: BashOps | undefined;
   let fenceUnavailableReason: string | undefined;
+  let loadedConfig: GuardConfig | undefined;
   let status = "guard: not started";
   // Tools already announced as inferred, so a mid-session registration is reported once.
   const announcedInferred = new Set<string>();
@@ -64,6 +79,7 @@ export default function guardExtension(
     guard = undefined;
     bashOps = undefined;
     fenceUnavailableReason = undefined;
+    loadedConfig = undefined;
     announceInferred = undefined;
     announcedInferred.clear();
     status = "guard: starting";
@@ -78,6 +94,9 @@ export default function guardExtension(
         agentDir: deps.agentDir ?? getAgentDir(),
         cwd: ctx.cwd,
       });
+      // Kept even when the guard is disabled or fails to start, so `/guard` can still name the
+      // files it read and the policy it loaded.
+      loadedConfig = config;
       if (!config.enabled) {
         status = "guard: off (enabled: false in sandbox.json)";
         ctx.ui.notify(status, "warning");
@@ -230,7 +249,15 @@ export default function guardExtension(
         (grants.paths.length === 0 && grants.tools.length === 0)
           ? "nothing granted this session"
           : `granted — paths: ${grants.paths.join(", ") || "none"}; tools: ${grants.tools.join(", ") || "none"}`;
-      ctx.ui.notify(`${status}; ${granted}`, "info");
+      const lines = [status];
+      if (loadedConfig !== undefined) {
+        lines.push(
+          `config: global ${loadedConfig.configPaths.global}; project ${loadedConfig.configPaths.project}`,
+        );
+        lines.push(`policy: ${describePolicy(loadedConfig.policy)}`);
+      }
+      lines.push(granted);
+      ctx.ui.notify(lines.join("\n"), "info");
     },
   });
 

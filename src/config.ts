@@ -73,6 +73,8 @@ export interface GuardConfig {
   overrides: Record<string, ToolOverride>;
   /** Recognised keys that were ignored; surfaced so the user can prune them. */
   ignoredKeys: string[];
+  /** Where each config layer was read from, so `/guard` can report the paths it loaded. */
+  configPaths: { global: string; project: string };
   /** The validated runtime config, ready to hand to `SandboxManager.initialize`. */
   runtime: SandboxRuntimeConfig;
 }
@@ -325,6 +327,7 @@ export function loadGuardConfig(paths: {
     },
     overrides: toolsOverrides(supplied),
     ignoredKeys: dropped.filter((key) => LEGACY_KEYS.has(key)).sort(),
+    configPaths: { global: globalPath, project: projectPath },
     runtime: parsed.data,
   };
 }

@@ -50,6 +50,21 @@ test("reads the filesystem and network policy out of the existing config file", 
   assert.deepEqual(config.policy.denyWrite, [join(dir.cwd, ".env")]);
 });
 
+test("reports the two config paths it read, so `/guard` can name them", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+  });
+  writeProject(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+  });
+
+  assert.deepEqual(loadGuardConfig(dir).configPaths, {
+    global: join(dir.agentDir, "sandbox.json"),
+    project: join(dir.cwd, ".pi", "sandbox.json"),
+  });
+});
+
 test("unions the layers so a project file cannot drop a global denyRead", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {

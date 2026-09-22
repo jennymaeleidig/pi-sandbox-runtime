@@ -181,6 +181,25 @@ test("fences the bash Tool and registers the guard's commands when the session s
   assert.equal(runtime.initialized, 1);
 });
 
+test("/guard reports the loaded policy, the config paths, and the grants", async () => {
+  writeConfig(validConfig);
+  const host = fakePi();
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+  await startSession(host);
+
+  await host.command("guard", "");
+
+  const report = host.notifications.at(-1);
+  assert.equal(report?.kind, "info");
+  const message = report?.message ?? "";
+  assert.match(message, /policy: allowRead \[/);
+  assert.ok(message.includes(denied), message);
+  assert.ok(message.includes(allowed), message);
+  assert.ok(message.includes(join(agentDir, "sandbox.json")), message);
+  assert.ok(message.includes(join(cwd, ".pi", "sandbox.json")), message);
+  assert.match(message, /nothing granted this session/);
+});
+
 test("notices which Tools have an inferred access, so a wrong guess is discoverable", async () => {
   writeConfig(validConfig);
   const host = fakePi({
