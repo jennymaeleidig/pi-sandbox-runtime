@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  realpathSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -8,7 +14,11 @@ import { loadGuardConfig } from "../src/config.ts";
 
 function fixtureDir(): { agentDir: string; cwd: string } {
   const agentDir = mkdtempSync(join(tmpdir(), "guard-agent-"));
-  const cwd = mkdtempSync(join(tmpdir(), "guard-project-"));
+  // The session cwd is canonical, matching how the guard names its region. On a host where the
+  // temp root is a symlink (macOS `/tmp` -> `/private/tmp`) the raw mkdtemp path is not.
+  const cwd = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "guard-project-")),
+  );
   return { agentDir, cwd };
 }
 
@@ -138,7 +148,10 @@ test("merges a project config over the global one, unioning the path lists", () 
 
   assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
   assert.deepEqual(config.policy.allowRead, [dir.cwd, "/opt"]);
-  assert.deepEqual(config.policy.allowWrite, [dir.cwd, "/tmp"]);
+  assert.deepEqual(config.policy.allowWrite, [
+    dir.cwd,
+    realpathSync.native("/tmp"),
+  ]);
 });
 
 test("absolutizes relative path patterns against the session cwd, so the fence cannot diverge", () => {
@@ -186,6 +199,39 @@ test("leaves domains, absolute paths and `~` patterns unrewritten", () => {
   assert.deepEqual(config.runtime.network.allowedDomains, ["github.com"]);
   assert.deepEqual(config.runtime.network.deniedDomains, ["evil.test"]);
   assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users", "~/secrets"]);
+});
+
+test("canonicalizes a pattern under a symlinked root, so the fence and guard name one region", () => {
+  const agentDir = mkdtempSync(join(tmpdir(), "guard-link-agent-"));
+  writeGlobal(
+    { agentDir },
+    {
+      filesystem: {
+        denyRead: [],
+        allowRead: ["."],
+        allowWrite: ["newdir"],
+        denyWrite: [],
+      },
+    },
+  );
+  const real = realpathSync.native(
+    mkdtempSync(join(tmpdir(), "guard-link-real-")),
+  );
+  const link = join(mkdtempSync(join(tmpdir(), "guard-link-parent-")), "link");
+  symlinkSync(real, link, "dir");
+
+  const config = loadGuardConfig({ agentDir, cwd: link });
+
+  // `.` is the symlink itself, and `newdir` does not exist yet: both must reach the fence as the
+  // realpath spelling the guard judges claims by, not as the link spelling.
+  assert.deepEqual(config.runtime.filesystem.allowRead, [real]);
+  assert.deepEqual(config.runtime.filesystem.allowWrite, [
+    join(real, "newdir"),
+  ]);
+  assert.deepEqual(
+    config.policy.allowRead,
+    config.runtime.filesystem.allowRead,
+  );
 });
 
 test("hard-errors on an unrecognised key, so a typo cannot look like protection", () => {

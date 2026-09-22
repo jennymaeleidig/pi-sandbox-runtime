@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
@@ -14,7 +20,8 @@ import type { SandboxRuntime } from "../src/sandbox.ts";
 import { toolSchema } from "./tool-info.ts";
 
 const agentDir = mkdtempSync(join(tmpdir(), "guard-ext-agent-"));
-const cwd = mkdtempSync(join(tmpdir(), "guard-ext-cwd-"));
+// Canonical, like the guard's regions: the temp root can be a symlink (macOS `/tmp`).
+const cwd = realpathSync.native(mkdtempSync(join(tmpdir(), "guard-ext-cwd-")));
 const allowed = join(cwd, "allowed");
 const denied = join(cwd, "denied");
 mkdirSync(allowed);

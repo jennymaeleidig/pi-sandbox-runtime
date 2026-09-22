@@ -8,7 +8,7 @@ import {
 
 import type { ToolOverride } from "./claims.ts";
 import type { GuardPolicy } from "./guard.ts";
-import { resolveIfRelative } from "./policy.ts";
+import { canonicalizeAgainst, isHomeRelative } from "./policy.ts";
 
 /** Config keys the guard owns rather than passing to the runtime. */
 const GUARD_KEYS = new Set(["enabled", "tools"]);
@@ -189,6 +189,20 @@ function droppedKeys(supplied: Json, parsed: SandboxRuntimeConfig): string[] {
 }
 
 /**
+ * A path pattern in the same canonical form the guard judges claims by.
+ *
+ * `~` is left for the runtime to expand itself, per ADR-0001. Every other pattern is realpath'd
+ * over its longest existing prefix — not merely `path.resolve`-normalized — so that when a
+ * component is a symlink the fence and the guard name the same region instead of two spellings of
+ * it. Without this, a pattern under a symlinked root reached the fence lexically while the guard
+ * matched claims canonicalized, so the fence could be the looser of the two.
+ */
+function canonicalPattern(pattern: string, cwd: string): string {
+  if (isHomeRelative(pattern)) return pattern;
+  return canonicalizeAgainst(pattern, cwd);
+}
+
+/**
  * Remove the guard/fence ambiguity: the runtime resolves relative path patterns against ambient
  * `process.cwd()`, while the guard resolves its claims against the session working directory.
  * Rewriting the path lists here means both name the same region. Domain lists are never touched.
@@ -200,7 +214,7 @@ function absolutizePaths(config: Json, cwd: string): void {
     withKey(
       config,
       dotted,
-      patterns.map((pattern) => resolveIfRelative(pattern, cwd)),
+      patterns.map((pattern) => canonicalPattern(pattern, cwd)),
     );
   }
 }
