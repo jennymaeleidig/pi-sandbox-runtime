@@ -1,5 +1,6 @@
 import {
   createToolInventory,
+  type Access,
   type ToolCallLike,
   type ToolOverride,
   type ToolSchema,
@@ -103,6 +104,25 @@ function refusalReason(
   }
 }
 
+/**
+ * The refusal prose for one refused access.
+ *
+ * For an inferred claim it also shows the declaration to add, using the field names introspection
+ * already found, so the refusal teaches the one-line fix.
+ */
+function refusalMessage(
+  claim: CanonicalClaim,
+  toolName: string,
+  access: Access,
+  refusal: Exclude<Refusal, { rule: "malformed-claim" }>,
+): string {
+  const grant = `Grant it for this session with /guard-allow ${claim.path}`;
+  const refused = `Guard refused ${access} of "${claim.path}" by tool "${toolName}": ${refusalReason(refusal)}`;
+  if (claim.basis !== "inferred") return `${refused}. ${grant}`;
+  const fields = (claim.fields ?? []).map((field) => `"${field}"`).join(", ");
+  return `${refused}. Its access was inferred, not declared: declare it in the guard's \`tools\` config as {"fields": [${fields}]} with access "read" or "write". ${grant}`;
+}
+
 /** The first domain a command names that the policy does not allow, if any. */
 function refusedDomain(
   command: string,
@@ -166,17 +186,40 @@ export function createGuard(options: GuardOptions): Guard {
 
     for (const claim of canonicalizeClaims(mapped.claims, cwd)) {
       if (isGranted(claim)) continue;
-      const refusal = judge(claim);
-      if (refusal === undefined) continue;
-      if (refusal.rule === "malformed-claim") {
-        return unjudgeableDecision(
-          { kind: "malformed-claim", claim: refusal.claim },
-          event.toolName,
-        );
+
+      // An inferred claim must satisfy both rule sets; a declared one is judged by its own alone.
+      const accesses: readonly Access[] =
+        claim.basis === "inferred" ? ["read", "write"] : [claim.access];
+      const refusals: {
+        access: Access;
+        refusal: Exclude<Refusal, { rule: "malformed-claim" }>;
+      }[] = [];
+      for (const access of accesses) {
+        const refusal = judge({ ...claim, access });
+        if (refusal === undefined) continue;
+        if (refusal.rule === "malformed-claim") {
+          return unjudgeableDecision(
+            { kind: "malformed-claim", claim: refusal.claim },
+            event.toolName,
+          );
+        }
+        refusals.push({ access, refusal });
       }
+      if (refusals.length === 0) continue;
+
+      // When both rule sets refuse, report the read reason: it is the substantive finding on the
+      // default-open side. Either refusal is enough to block.
+      const refusal =
+        refusals.find((entry) => entry.access === "read") ?? refusals[0];
+      if (refusal === undefined) continue;
       return {
         block: true,
-        reason: `Guard refused ${claim.access} of "${claim.path}" by tool "${event.toolName}": ${refusalReason(refusal)}. Grant it for this session with /guard-allow ${claim.path}`,
+        reason: refusalMessage(
+          claim,
+          event.toolName,
+          refusal.access,
+          refusal.refusal,
+        ),
       };
     }
 

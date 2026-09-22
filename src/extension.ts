@@ -12,7 +12,7 @@ import {
   type ToolCallEventResult,
 } from "@earendil-works/pi-coding-agent";
 
-import { needsLiveFence } from "./claims.ts";
+import { inferredToolAccesses, needsLiveFence } from "./claims.ts";
 import { loadGuardConfig } from "./config.ts";
 import { createGuard, type Guard } from "./guard.ts";
 import {
@@ -115,6 +115,19 @@ export default function guardExtension(
       if (config.ignoredKeys.length > 0) {
         ctx.ui.notify(
           `guard: ignoring config keys the runtime no longer accepts — ${config.ignoredKeys.join(", ")}`,
+          "warning",
+        );
+      }
+
+      // Access the guard had to infer is the one thing a refusal cannot surface when the guess is
+      // permissive, so announce it at session start: this is the trigger for correcting it in config.
+      const inferred = inferredToolAccesses(pi.getAllTools(), config.overrides);
+      if (inferred.length > 0) {
+        const summary = inferred
+          .map((tool) => `${tool.name} (fields: ${tool.fields.join(", ")})`)
+          .join("; ");
+        ctx.ui.notify(
+          `guard: access inferred for ${inferred.length} Tool(s) — ${summary}. Each is judged against both the read and write rules until declared in \`tools\`.`,
           "warning",
         );
       }

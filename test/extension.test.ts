@@ -38,7 +38,12 @@ const validConfig = {
 };
 
 /** A minimal host that records what the extension registers, so the wiring can be inspected. */
-function fakePi(options: { flags?: Record<string, boolean | string> } = {}) {
+function fakePi(
+  options: {
+    flags?: Record<string, boolean | string>;
+    tools?: { name?: unknown; parameters?: unknown }[];
+  } = {},
+) {
   const handlers = new Map<string, (event: unknown, ctx: unknown) => unknown>();
   const commands = new Map<string, (args: string, ctx: unknown) => unknown>();
   const tools: { name?: unknown }[] = [];
@@ -49,13 +54,14 @@ function fakePi(options: { flags?: Record<string, boolean | string> } = {}) {
     tools,
     registerFlag(): void {},
     getFlag: (name: string) => options.flags?.[name],
-    getAllTools: () => [
-      {
-        name: "read",
-        parameters: { properties: { path: { type: "string" } } },
-      },
-      { name: "bash", parameters: { properties: {} } },
-    ],
+    getAllTools: () =>
+      options.tools ?? [
+        {
+          name: "read",
+          parameters: { properties: { path: { type: "string" } } },
+        },
+        { name: "bash", parameters: { properties: {} } },
+      ],
     on(
       event: string,
       handler: (event: unknown, ctx: unknown) => unknown,
@@ -172,6 +178,35 @@ test("fences the bash Tool and registers the guard's commands when the session s
     "a grant command should be registered",
   );
   assert.equal(runtime.initialized, 1);
+});
+
+test("notices which Tools have an inferred access, so a wrong guess is discoverable", async () => {
+  writeConfig(validConfig);
+  const host = fakePi({
+    tools: [
+      {
+        name: "read",
+        parameters: { properties: { path: { type: "string" } } },
+      },
+      {
+        name: "format_md_tables",
+        parameters: { properties: { path: { type: "string" } } },
+      },
+    ],
+  });
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+
+  await startSession(host);
+
+  assert.ok(
+    host.notifications.some(
+      (entry) =>
+        entry.kind === "warning" &&
+        /inferred/.test(entry.message) &&
+        /format_md_tables/.test(entry.message),
+    ),
+    JSON.stringify(host.notifications),
+  );
 });
 
 test("blocks a Tool call the policy refuses", async () => {

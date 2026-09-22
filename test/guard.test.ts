@@ -193,6 +193,84 @@ test("allows that same extension Tool to write inside allowWrite", () => {
   );
 });
 
+test("refuses a read-hinted Tool when it writes outside allowWrite", () => {
+  // The fail-open this ticket closes: `show` read like a reader, so this Tool's writes went
+  // unchecked wherever denyRead did not reach.
+  const saver = toolSchema("show_diff_and_save", { path: { type: "string" } });
+  const guard = createGuard({
+    policy,
+    tools: () => [saver],
+    overrides: {},
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "show_diff_and_save",
+    input: { path: join(root, "elsewhere", "file.txt") },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /write/);
+});
+
+test("refuses an inferred claim that passes the write rules but matches denyRead", () => {
+  const writer = toolSchema("mystery_writer", { path: { type: "string" } });
+  const guard = createGuard({
+    policy: { ...policy, allowWrite: [denied] },
+    tools: () => [writer],
+    overrides: {},
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "mystery_writer",
+    input: { path: join(denied, "file.txt") },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /denyRead/);
+});
+
+test("an inferred refusal names the Tool and shows the declaration to add", () => {
+  const writer = toolSchema("mystery_writer", { path: { type: "string" } });
+  const guard = createGuard({
+    policy,
+    tools: () => [writer],
+    overrides: {},
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "mystery_writer",
+    input: { path: join(root, "elsewhere", "file.txt") },
+  });
+
+  assert.match(decision.reason ?? "", /mystery_writer/);
+  assert.match(decision.reason ?? "", /"fields": \["path"\]/);
+  assert.match(decision.reason ?? "", /read.*write/);
+});
+
+test("a declared access is judged by its own rule set alone, never both", () => {
+  const reader = toolSchema("declared_reader", { path: { type: "string" } });
+  const guard = createGuard({
+    policy,
+    tools: () => [reader],
+    overrides: {
+      declared_reader: { fields: ["path"], access: "read" },
+    },
+    cwd: root,
+  });
+
+  // Readable but not writable: a declared read must not also be judged against the write rules.
+  assert.deepEqual(
+    guard({
+      toolName: "declared_reader",
+      input: { path: join(allowed, "file.txt") },
+    }),
+    {},
+  );
+});
+
 test("denyWrite beats allowWrite", () => {
   const guard = createGuard({
     policy: { ...policy, denyWrite: [join(allowed, "secret.env")] },
@@ -289,7 +367,11 @@ test("routes an unmapped Tool and a malformed claim through one fail-closed path
   const malformed = unjudgeableDecision(
     {
       kind: "malformed-claim",
-      claim: { path: "not/canonical" as CanonicalPath, access: "read" },
+      claim: {
+        path: "not/canonical" as CanonicalPath,
+        access: "read",
+        basis: "declared",
+      },
     },
     "mystery_tool",
   );

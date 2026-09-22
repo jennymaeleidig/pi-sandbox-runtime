@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   createToolInventory,
+  inferredToolAccesses,
   needsLiveFence,
   type ToolSchema,
 } from "../src/claims.ts";
@@ -48,7 +49,10 @@ test("an explicit config entry beats the core Tool table", () => {
 
   assert.deepEqual(
     inventory.touches({ toolName: "lint_notes", input: { out: "/tmp/x" } }),
-    { kind: "claims", claims: [{ path: "/tmp/x", access: "write" }] },
+    {
+      kind: "claims",
+      claims: [{ path: "/tmp/x", access: "write", basis: "declared" }],
+    },
   );
 });
 
@@ -64,7 +68,17 @@ test("an unknown Tool with path fields is judged by its schema", () => {
       toolName: "format_md_tables",
       input: { path: "/tmp/doc.md" },
     }),
-    { kind: "claims", claims: [{ path: "/tmp/doc.md", access: "write" }] },
+    {
+      kind: "claims",
+      claims: [
+        {
+          path: "/tmp/doc.md",
+          access: "write",
+          basis: "inferred",
+          fields: ["path"],
+        },
+      ],
+    },
   );
 });
 
@@ -98,6 +112,34 @@ test("the provider is read per call, so a Tool that appears later is judged", ()
 
   assert.deepEqual(
     inventory.touches({ toolName: "late_tool", input: { path: "/tmp/x" } }),
-    { kind: "claims", claims: [{ path: "/tmp/x", access: "write" }] },
+    {
+      kind: "claims",
+      claims: [
+        {
+          path: "/tmp/x",
+          access: "write",
+          basis: "inferred",
+          fields: ["path"],
+        },
+      ],
+    },
+  );
+});
+
+test("lists the Tools whose access would be inferred, and the fields found", () => {
+  const tools = [
+    toolSchema("read", { path: { type: "string" } }),
+    toolSchema("format_md_tables", { path: { type: "string" } }),
+  ];
+
+  assert.deepEqual(inferredToolAccesses(tools, {}), [
+    { name: "format_md_tables", fields: ["path"] },
+  ]);
+  // Declaring the Tool ends the inference.
+  assert.deepEqual(
+    inferredToolAccesses(tools, {
+      format_md_tables: { fields: ["path"], access: "read" },
+    }),
+    [],
   );
 });

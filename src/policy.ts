@@ -16,7 +16,7 @@ import { existsSync, realpathSync } from "node:fs";
 import { homedir } from "node:os";
 import { basename, dirname, isAbsolute, resolve } from "node:path";
 
-import type { Access, Claim } from "./claims.ts";
+import type { Access, AccessBasis, Claim } from "./claims.ts";
 
 declare const canonicalPathBrand: unique symbol;
 
@@ -30,6 +30,9 @@ export type CanonicalPath = string & { readonly [canonicalPathBrand]: true };
 export interface CanonicalClaim {
   path: CanonicalPath;
   access: Access;
+  basis: AccessBasis;
+  /** For an inferred claim, the path fields introspection found, for the refusal's declaration. */
+  fields?: string[];
 }
 
 /** The path regions of the guard policy, without the domain lists. */
@@ -100,6 +103,8 @@ export function canonicalizeClaims(
   return claims.map((claim) => ({
     path: canonicalizeAgainst(claim.path, cwd),
     access: claim.access,
+    basis: claim.basis,
+    ...(claim.fields !== undefined ? { fields: claim.fields } : {}),
   }));
 }
 

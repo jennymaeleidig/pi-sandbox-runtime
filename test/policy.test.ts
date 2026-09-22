@@ -30,7 +30,7 @@ function claim(
   access: "read" | "write",
   cwd: string = root,
 ): CanonicalClaim {
-  return { path: canonicalizeAgainst(path, cwd), access };
+  return { path: canonicalizeAgainst(path, cwd), access, basis: "declared" };
 }
 
 test("allows a read that no denyRead pattern matches", () => {
@@ -156,6 +156,7 @@ test("fails closed on a claim that was cast past the canonical brand", () => {
   const refusal = judge({
     path: "relative/not-canonical" as CanonicalPath,
     access: "read",
+    basis: "declared",
   });
 
   assert.equal(refusal?.rule, "malformed-claim");

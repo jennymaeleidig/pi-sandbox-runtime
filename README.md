@@ -16,7 +16,10 @@ runtime.
 - **Every Tool call** is judged before it runs. Core Tools (`read`, `write`, `edit`, `grep`, `find`,
   `ls`, `bash`, `powershell`) are mapped to what they touch; Tools from other packages are read from
   their advertised parameter schema, so a Tool with a `path` argument is checked even though this
-  package has never heard of it.
+  package has never heard of it. When the guard cannot tell whether such a Tool reads or writes that
+  path, it judges the claim against **both** the read and the write rules, and says so in the
+  refusal; a session-start notice lists the Tools whose access was inferred, so a stricter-than-
+  needed classification can be corrected with a `tools` entry.
 - **Shell commands** run inside the OS sandbox: macOS `sandbox-exec`, Linux `bwrap`, with the network
   allowlist enforced through a proxy.
 - **Unknown Tools are refused**, not allowed. A Tool whose paths cannot be determined is a Tool whose

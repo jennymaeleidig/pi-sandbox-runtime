@@ -2,6 +2,9 @@ import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 
 export type Access = "read" | "write";
 
+/** Whether a claim's access was declared by config or the core table, or inferred by introspection. */
+export type AccessBasis = "declared" | "inferred";
+
 /** The only part of a Tool's advertised schema the guard consumes; pi's `ToolInfo` satisfies it. */
 export type ToolSchema = Pick<ToolInfo, "name"> & {
   parameters: { properties?: Record<string, { type?: unknown }> };
@@ -10,6 +13,9 @@ export type ToolSchema = Pick<ToolInfo, "name"> & {
 export interface Claim {
   path: string;
   access: Access;
+  basis: AccessBasis;
+  /** For an inferred claim, the path fields introspection found, for the refusal's declaration. */
+  fields?: string[];
 }
 
 /** A Tool's declared path fields and access, from the guard's own config. */
@@ -61,10 +67,14 @@ const TOOL_KINDS = {
   ls: "paths",
 } as const satisfies Record<CoreToolName, ToolKind>;
 
+function coreToolKind(toolName: string): ToolKind | undefined {
+  const kinds: Record<string, ToolKind | undefined> = TOOL_KINDS;
+  return kinds[toolName];
+}
+
 /** Whether this Tool's access only the OS fence can enforce, so it needs a live sandbox. */
 export function needsLiveFence(toolName: string): boolean {
-  const kinds: Record<string, ToolKind | undefined> = TOOL_KINDS;
-  return kinds[toolName] === "command";
+  return coreToolKind(toolName) === "command";
 }
 
 const WRITE_TOOLS = new Set(["write", "edit"]);
@@ -75,25 +85,6 @@ const OPTIONAL_PATH_TOOLS = new Set(["grep", "find", "ls"]);
 /** Path-ish field names used when introspecting a Tool's own parameter schema. */
 const PATH_FIELD_NAMES = ["path", "file", "files", "dir", "directory", "root"];
 
-const WRITE_NAME_HINTS = [
-  "format",
-  "fix",
-  "write",
-  "create",
-  "edit",
-  "apply",
-  "rewrite",
-];
-const READ_NAME_HINTS = [
-  "lint",
-  "check",
-  "read",
-  "list",
-  "show",
-  "scan",
-  "analyze",
-];
-
 function pathFieldsFromOverride(
   input: Record<string, unknown>,
   fields: string[],
@@ -102,11 +93,11 @@ function pathFieldsFromOverride(
   for (const field of fields) {
     const value = input[field];
     if (typeof value === "string" && value.length > 0)
-      claims.push({ path: value, access: "read" });
+      claims.push({ path: value, access: "read", basis: "declared" });
     if (Array.isArray(value)) {
       for (const entry of value) {
         if (typeof entry === "string" && entry.length > 0)
-          claims.push({ path: entry, access: "read" });
+          claims.push({ path: entry, access: "read", basis: "declared" });
       }
     }
   }
@@ -126,19 +117,16 @@ function stringFieldNames(tool: ToolSchema): string[] {
     .map(([name]) => name);
 }
 
-function accessFromToolName(name: string): Access {
-  const lower = name.toLowerCase();
-  if (WRITE_NAME_HINTS.some((hint) => lower.includes(hint))) return "write";
-  if (READ_NAME_HINTS.some((hint) => lower.includes(hint))) return "read";
-  return "write";
-}
-
 /**
  * Map a Tool call to the paths it touches.
  *
  * Precedence: command Tools first (a `tools` override must never be able to turn the fence's
  * network check off), then an explicit config entry, then a known core Tool, then the Tool's own
  * advertised parameter schema. Anything left over is `unmapped` and the guard refuses it.
+ *
+ * Introspection discovers *which* fields are paths; it does not guess whether the Tool reads or
+ * writes them, because that is semantic and not derivable from a name. Such a claim is marked
+ * inferred and the guard judges it against both rule sets.
  */
 function mapToolCall(
   toolName: string,
@@ -163,6 +151,7 @@ function mapToolCall(
       (claim) => ({
         path: claim.path,
         access,
+        basis: "declared" as const,
       }),
     );
     return claims.length > 0 ? { kind: "claims", claims } : { kind: "none" };
@@ -176,10 +165,16 @@ function mapToolCall(
     // path, so a call without one is refused rather than judged against a guess.
     if (path === undefined) {
       return OPTIONAL_PATH_TOOLS.has(toolName)
-        ? { kind: "claims", claims: [{ path: cwd, access }] }
+        ? {
+            kind: "claims",
+            claims: [{ path: cwd, access, basis: "declared" }],
+          }
         : { kind: "unmapped" };
     }
-    return { kind: "claims", claims: [{ path, access }] };
+    return {
+      kind: "claims",
+      claims: [{ path, access, basis: "declared" }],
+    };
   }
 
   const tool = tools.find((candidate) => candidate.name === toolName);
@@ -188,12 +183,41 @@ function mapToolCall(
   const fields = stringFieldNames(tool);
   if (fields.length === 0) return { kind: "unmapped" };
 
-  const access = accessFromToolName(toolName);
   const claims = pathFieldsFromOverride(input, fields).map((claim) => ({
     path: claim.path,
-    access,
+    // The access is unknown and stays unknown; `write` is only a conservative placeholder so a
+    // code path that forgets the `inferred` basis still fails closed. The guard judges both.
+    access: "write" as const,
+    basis: "inferred" as const,
+    fields,
   }));
   return claims.length > 0 ? { kind: "claims", claims } : { kind: "unmapped" };
+}
+
+/** A Tool whose access the guard would have to infer, for the session-start notice. */
+export interface InferredToolAccess {
+  name: string;
+  fields: string[];
+}
+
+/**
+ * Every Tool whose access would be inferred: not a core Tool, not declared in config, and advertising
+ * at least one path field. The session-start notice uses this to make a permissive misclassification
+ * discoverable, which a refusal alone can never do.
+ */
+export function inferredToolAccesses(
+  tools: readonly ToolSchema[],
+  overrides: Record<string, ToolOverride>,
+): InferredToolAccess[] {
+  const inferred: InferredToolAccess[] = [];
+  for (const tool of tools) {
+    if (coreToolKind(tool.name) !== undefined) continue;
+    if (overrides[tool.name] !== undefined) continue;
+    const fields = stringFieldNames(tool);
+    if (fields.length === 0) continue;
+    inferred.push({ name: tool.name, fields });
+  }
+  return inferred;
 }
 
 export interface ToolInventoryDeps {
