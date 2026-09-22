@@ -11,6 +11,7 @@ import {
   compilePathPolicy,
   domainIsAllowed,
   extractDomainsFromCommand,
+  type CanonicalClaim,
   type Refusal,
 } from "./policy.ts";
 
@@ -59,8 +60,37 @@ export interface Guard {
   grants(): { paths: string[]; tools: string[] };
 }
 
+/** A call the guard could not judge, whatever the cause. */
+export type Unjudgeable =
+  { kind: "unmapped" } | { kind: "malformed-claim"; claim: CanonicalClaim };
+
+/**
+ * The one fail-closed outcome for a call the guard could not judge.
+ *
+ * The cause is carried as a token, so prose can differ per cause and a new cause is additive. An
+ * `unmapped` call is a user problem with a user remedy; a `malformed-claim` is a programmer error the
+ * canonical-claim brand should have made unrepresentable, so it gets no tutorial prose.
+ */
+export function unjudgeableDecision(
+  cause: Unjudgeable,
+  toolName: string,
+): GuardDecision {
+  if (cause.kind === "unmapped") {
+    return {
+      block: true,
+      reason: `Guard refused tool "${toolName}": no path in this call could be judged against the policy. Declare the Tool in the guard's \`tools\` config with its path fields and access.`,
+    };
+  }
+  return {
+    block: true,
+    reason: `Guard refused tool "${toolName}": the call produced a claim the guard could not judge.`,
+  };
+}
+
 /** The prose for a structured refusal. The wording lives with the presentation, not the policy. */
-function refusalReason(refusal: Refusal): string {
+function refusalReason(
+  refusal: Exclude<Refusal, { rule: "malformed-claim" }>,
+): string {
   switch (refusal.rule) {
     case "denyRead":
       return "it falls inside a denyRead region";
@@ -68,8 +98,6 @@ function refusalReason(refusal: Refusal): string {
       return "it falls inside a denyWrite region";
     case "allowWrite":
       return "it is not in allowWrite";
-    case "malformed-claim":
-      return "the claim was not canonicalized, so it could not be judged";
   }
 }
 
@@ -129,10 +157,7 @@ export function createGuard(options: GuardOptions): Guard {
     }
 
     if (mapped.kind === "unmapped") {
-      return {
-        block: true,
-        reason: `Guard refused tool "${event.toolName}": no path in this call could be judged against the policy. Declare the Tool in the guard's \`tools\` config with its path fields and access.`,
-      };
+      return unjudgeableDecision({ kind: "unmapped" }, event.toolName);
     }
 
     if (mapped.kind !== "claims") return {};
@@ -140,12 +165,17 @@ export function createGuard(options: GuardOptions): Guard {
     for (const claim of canonicalizeClaims(mapped.claims, cwd)) {
       if (isGranted(claim)) continue;
       const refusal = judge(claim);
-      if (refusal !== undefined) {
-        return {
-          block: true,
-          reason: `Guard refused ${claim.access} of "${claim.path}" by tool "${event.toolName}": ${refusalReason(refusal)}. Grant it for this session with /guard-allow ${claim.path}`,
-        };
+      if (refusal === undefined) continue;
+      if (refusal.rule === "malformed-claim") {
+        return unjudgeableDecision(
+          { kind: "malformed-claim", claim: refusal.claim },
+          event.toolName,
+        );
       }
+      return {
+        block: true,
+        reason: `Guard refused ${claim.access} of "${claim.path}" by tool "${event.toolName}": ${refusalReason(refusal)}. Grant it for this session with /guard-allow ${claim.path}`,
+      };
     }
 
     return {};

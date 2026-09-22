@@ -6,11 +6,12 @@ import { join } from "node:path";
 
 import {
   createGuard,
+  unjudgeableDecision,
   type GuardPolicy,
   type ToolCallLike,
 } from "../src/guard.ts";
 import type { ToolSchema } from "../src/claims.ts";
-import { canonicalizePath } from "../src/policy.ts";
+import { canonicalizePath, type CanonicalPath } from "../src/policy.ts";
 
 const root = mkdtempSync(join(tmpdir(), "guard-"));
 const allowed = join(root, "allowed");
@@ -281,6 +282,24 @@ test("judges a Tool that appears in the provider after the guard is built", () =
   assert.equal(after.block, true);
   assert.match(after.reason ?? "", /write/);
   assert.doesNotMatch(after.reason ?? "", /Declare the Tool/);
+});
+
+test("routes an unmapped Tool and a malformed claim through one fail-closed path", () => {
+  const unmapped = unjudgeableDecision({ kind: "unmapped" }, "mystery_tool");
+  const malformed = unjudgeableDecision(
+    {
+      kind: "malformed-claim",
+      claim: { path: "not/canonical" as CanonicalPath, access: "read" },
+    },
+    "mystery_tool",
+  );
+
+  assert.equal(unmapped.block, true);
+  assert.equal(malformed.block, true);
+  assert.notEqual(unmapped.reason, malformed.reason);
+  // A programmer error gets no tutorial prose; an unmapped Tool keeps its user remedy.
+  assert.match(unmapped.reason ?? "", /Declare the Tool/);
+  assert.doesNotMatch(malformed.reason ?? "", /Declare the Tool/);
 });
 
 test("allows a Tool declared as touching no paths", () => {
