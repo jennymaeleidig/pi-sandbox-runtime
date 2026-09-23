@@ -50,19 +50,16 @@ Two files are read, and both may be absent:
 | Project | `<project>/.pi/sandbox.json` |
 
 The project file is layered over the global one: scalars and the `network` / `filesystem` sections
-are replaced, while the six path and domain lists are **unioned**, and the `tools` map is merged per
-Tool name. That union is deliberate — a project file cannot silently drop a global `denyRead` from
-either the guard or the OS fence. `enabled` is replace-not-merge, so a project can switch the guard
-off for itself. A key the runtime does not recognise is an error rather than a shrug: a key you
-believe is protection but which is ignored is worse than no protection.
+are replaced, while the four `filesystem` path lists are **unioned**, and the `tools` map is merged
+per Tool name. That union is deliberate — a project file cannot silently drop a global `denyRead`
+from either the guard or the OS fence. `enabled` is replace-not-merge, so a project can switch the
+guard off for itself. A key the guard does not recognise is an error rather than a shrug: a key you
+believe is protection but which is ignored is worse than no protection. Keys it recognises but no
+longer honours are reported at session start instead of being silently dropped.
 
 ```json
 {
   "enabled": true,
-  "network": {
-    "allowedDomains": ["github.com", "registry.npmjs.org"],
-    "deniedDomains": []
-  },
   "filesystem": {
     "denyRead": ["/Users", "/home"],
     "allowRead": ["."],
@@ -83,7 +80,11 @@ knowing before you copy it:
   deny still wins over a broader allow. Reads default to **allowed** wherever no `denyRead` matches.
 - If no config exists at all, the guard supplies `denyRead: ["/Users", "/home"]` and empty lists for
   everything else. Nothing is writable until you say so.
-- `allowedDomains` must name real domains. `"*"` is rejected by the runtime, on purpose.
+- The guard fences the **filesystem only**. It initializes the runtime without a domain allow-list,
+  which is what leaves network access unrestricted, so no network proxy runs.
+  `network.allowedDomains` and `network.deniedDomains` are read, reported as ignored, and stripped;
+  the rest of the `network` block is passed through but only matters when a proxy is running, which
+  it is not here.
 
 ### Tools the guard must be told about
 
@@ -120,7 +121,12 @@ path fields, or as another pass-through Tool; a pathless target takes
 ## Every key
 
 The `network` and `filesystem` sections are the runtime's schema; `enabled` and `tools` belong to
-this package. Omitting an optional key leaves the runtime's own default in place.
+this package. Omitting an optional key leaves the runtime's own default in place. The guard fences
+the filesystem only, so it strips every `network` key that acts through the runtime's network proxy
+— the rows marked **Ignored** below — and reports them at session start. That proxy therefore never
+runs, and network access is unrestricted. Permissive local-IPC keys (`allowUnixSockets`,
+`allowAllUnixSockets`, `allowLocalBinding`, `allowMachLookup`) are grants rather than restrictions
+and pass through untouched.
 
 <!-- config-keys:start -->
 
@@ -134,21 +140,21 @@ this package. Omitting an optional key leaves the runtime's own default in place
 | `filesystem.denyWrite`            | yes, defaults to nothing       | Paths denied even inside `allowWrite`.                                                                                                                                   |
 | `filesystem.allowGitConfig`       | no                             | Permit reading `.git/config`, which is otherwise withheld.                                                                                                               |
 | `filesystem.disabled`             | no                             | Turn the filesystem half of the sandbox off.                                                                                                                             |
-| `network.allowedDomains`          | yes, defaults to nothing       | Domains commands may reach. Wildcards like `*.npmjs.org` are fine; `"*"` is not.                                                                                         |
-| `network.deniedDomains`           | yes, defaults to nothing       | Domains to block regardless.                                                                                                                                             |
-| `network.deniedDomainReasons`     | no                             | Explanations for specific denied domains.                                                                                                                                |
-| `network.strictAllowlist`         | no                             | Deny anything not explicitly allowed, rather than only what is resolved.                                                                                                 |
-| `network.deniedResolvedAddresses` | no                             | Addresses to block after resolution.                                                                                                                                     |
+| `network.allowedDomains`          | yes, defaults to nothing       | Domains commands may reach. **Ignored** — the guard fences filesystem only and leaves network access unrestricted.                                                       |
+| `network.deniedDomains`           | yes, defaults to nothing       | Domains to block regardless. **Ignored**, like `network.allowedDomains`.                                                                                                 |
+| `network.deniedDomainReasons`     | no                             | Explanations for specific denied domains. **Ignored** — the guard fences filesystem only.                                                                                |
+| `network.strictAllowlist`         | no                             | Deny anything not explicitly allowed, rather than only what is resolved. **Ignored** — the guard runs no network proxy.                                                  |
+| `network.deniedResolvedAddresses` | no                             | Addresses to block after resolution. **Ignored** — the guard runs no network proxy.                                                                                      |
 | `network.allowUnixSockets`        | no                             | Unix socket paths commands may use.                                                                                                                                      |
 | `network.allowAllUnixSockets`     | no                             | Skip the unix socket check entirely.                                                                                                                                     |
 | `network.allowLocalBinding`       | no                             | Permit binding local ports.                                                                                                                                              |
 | `network.allowMachLookup`         | no                             | macOS: additional Mach services to allow.                                                                                                                                |
-| `network.httpProxyPort`           | no                             | Pin the HTTP proxy port instead of choosing one.                                                                                                                         |
-| `network.socksProxyPort`          | no                             | Pin the SOCKS proxy port instead of choosing one.                                                                                                                        |
-| `network.mitmProxy`               | no                             | Upstream's MITM proxy block; mutually exclusive with `tlsTerminate`.                                                                                                     |
-| `network.filterRequest`           | no                             | Request-filtering hook (upstream feature).                                                                                                                               |
-| `network.tlsTerminate`            | no                             | TLS termination block (upstream feature).                                                                                                                                |
-| `network.parentProxy`             | no                             | Route the sandbox's proxies through an upstream proxy.                                                                                                                   |
+| `network.httpProxyPort`           | no                             | Pin the HTTP proxy port instead of choosing one. **Ignored** — the guard runs no network proxy.                                                                          |
+| `network.socksProxyPort`          | no                             | Pin the SOCKS proxy port instead of choosing one. **Ignored** — the guard runs no network proxy.                                                                         |
+| `network.mitmProxy`               | no                             | Upstream's MITM proxy block; mutually exclusive with `tlsTerminate`. **Ignored** — the guard runs no network proxy.                                                      |
+| `network.filterRequest`           | no                             | Request-filtering hook (upstream feature). **Ignored** — the guard runs no network proxy.                                                                                |
+| `network.tlsTerminate`            | no                             | TLS termination block (upstream feature). **Ignored** — the guard runs no network proxy.                                                                                 |
+| `network.parentProxy`             | no                             | Route the sandbox's proxies through an upstream proxy. **Ignored** — the guard runs no network proxy.                                                                    |
 | `credentials`                     | no                             | Upstream's credential-masking block.                                                                                                                                     |
 | `ripgrep`                         | no                             | Where to find `rg`, and how to run it.                                                                                                                                   |
 | `ignoreViolations`                | no                             | Violations to log without failing the command.                                                                                                                           |
@@ -177,6 +183,16 @@ typos.
 | `allowBrowserProcess`                    | `network` keys                          |
 | `network.allowUnauthenticatedSocksProxy` | `network.allowAllUnixSockets`           |
 | `network.sshProxy`                       | `network.parentProxy`                   |
+
+Network-policy keys are ignored for a different reason: they act only through a proxy this guard
+does not run, so honouring them would be a fence that is not there. `network.allowedDomains`,
+`network.deniedDomains`, `network.deniedDomainReasons`, `network.strictAllowlist`,
+`network.deniedResolvedAddresses`, `network.httpProxyPort`, `network.socksProxyPort`,
+`network.mitmProxy`, `network.tlsTerminate`, `network.parentProxy` and `network.filterRequest` are
+read, reported at session start, and stripped before the runtime is initialized. Their values are
+still schema-checked before stripping, so a wrongly typed ignored key is a load error rather than a
+silent pass. Prune them — in particular, a `network.allowedDomains` you believed restricted egress
+does nothing.
 
 ## Session commands
 

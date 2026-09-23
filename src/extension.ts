@@ -40,8 +40,6 @@ function describePolicy(policy: GuardPolicy): string {
     `denyRead [${list(policy.denyRead)}]`,
     `allowWrite [${list(policy.allowWrite)}]`,
     `denyWrite [${list(policy.denyWrite)}]`,
-    `allowedDomains [${list(policy.allowedDomains)}]`,
-    `deniedDomains [${list(policy.deniedDomains ?? [])}]`,
   ].join("; ");
 }
 
@@ -135,10 +133,10 @@ export default function guardExtension(
 
       bashOps = ops;
       guard = handler;
-      status = `guard: on — ${config.policy.allowedDomains.length} domain(s), ${config.policy.allowWrite.length} writable root(s)`;
+      status = `guard: on — ${config.policy.allowWrite.length} writable root(s), network unrestricted`;
       if (config.ignoredKeys.length > 0) {
         ctx.ui.notify(
-          `guard: ignoring config keys the runtime no longer accepts — ${config.ignoredKeys.join(", ")}`,
+          `guard: ignoring config keys the guard does not honour — ${config.ignoredKeys.join(", ")}`,
           "warning",
         );
       }

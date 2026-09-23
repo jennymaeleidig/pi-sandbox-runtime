@@ -39,10 +39,9 @@ function writeProject(dir: { cwd: string }, config: unknown): void {
   );
 }
 
-test("reads the filesystem and network policy out of the existing config file", () => {
+test("reads the filesystem policy out of the existing config file", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
-    network: { allowedDomains: ["github.com"] },
     filesystem: {
       denyRead: ["/Users"],
       allowRead: ["."],
@@ -54,10 +53,43 @@ test("reads the filesystem and network policy out of the existing config file", 
   const config = loadGuardConfig(dir);
 
   // Relative patterns are absolutized against the session cwd, so the guard and the OS fence agree.
-  assert.deepEqual(config.policy.allowedDomains, ["github.com"]);
   assert.deepEqual(config.policy.denyRead, ["/Users"]);
   assert.deepEqual(config.policy.allowWrite, [dir.cwd]);
   assert.deepEqual(config.policy.denyWrite, [join(dir.cwd, ".env")]);
+});
+
+test("strips the network policy from the runtime config, so network access is not fenced", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    network: {
+      allowedDomains: ["github.com"],
+      deniedDomains: ["evil.test"],
+      deniedResolvedAddresses: ["10.0.0.0/8"],
+      strictAllowlist: true,
+      allowAllUnixSockets: true,
+    },
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+  });
+
+  const config = loadGuardConfig(dir);
+  const network = config.runtime.network as Record<string, unknown>;
+
+  // Absent, not empty: the runtime reads an empty list as block-all and an absent one as
+  // unrestricted, so removing the key is what turns its network layer off.
+  assert.equal(network["allowedDomains"], undefined);
+  assert.equal(network["deniedDomains"], undefined);
+  // Every key that acts only through the proxy the guard no longer runs is stripped too, so none
+  // can read as a fence.
+  assert.equal(network["deniedResolvedAddresses"], undefined);
+  assert.equal(network["strictAllowlist"], undefined);
+  // Permissive local-IPC settings pass through, since they are grants rather than restrictions.
+  assert.equal(network["allowAllUnixSockets"], true);
+  assert.deepEqual(config.ignoredKeys, [
+    "network.allowedDomains",
+    "network.deniedDomains",
+    "network.deniedResolvedAddresses",
+    "network.strictAllowlist",
+  ]);
 });
 
 test("reports the two config paths it read, so `/guard` can name them", () => {
@@ -78,7 +110,6 @@ test("reports the two config paths it read, so `/guard` can name them", () => {
 test("unions the layers so a project file cannot drop a global denyRead", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
-    network: { allowedDomains: ["github.com"] },
     filesystem: {
       denyRead: ["/Users"],
       allowRead: ["~/secrets"],
@@ -87,7 +118,6 @@ test("unions the layers so a project file cannot drop a global denyRead", () => 
     },
   });
   writeProject(dir, {
-    network: { allowedDomains: ["npmjs.org"] },
     filesystem: {
       denyRead: [],
       allowRead: ["."],
@@ -108,11 +138,6 @@ test("unions the layers so a project file cannot drop a global denyRead", () => 
   assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users"]);
   assert.deepEqual(config.policy.allowRead, ["~/secrets", dir.cwd]);
   assert.deepEqual(config.runtime.filesystem.allowRead, ["~/secrets", dir.cwd]);
-  assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
-  assert.deepEqual(config.runtime.network.allowedDomains, [
-    "github.com",
-    "npmjs.org",
-  ]);
   assert.deepEqual(config.policy.denyWrite, [join(dir.cwd, ".env")]);
 });
 
@@ -131,7 +156,6 @@ test("supplies the denyRead default the config file omits, so the home root stay
 test("merges a project config over the global one, unioning the path lists", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
-    network: { allowedDomains: ["github.com"] },
     filesystem: {
       denyRead: ["/Users"],
       allowRead: ["."],
@@ -140,13 +164,11 @@ test("merges a project config over the global one, unioning the path lists", () 
     },
   });
   writeProject(dir, {
-    network: { allowedDomains: ["npmjs.org"] },
     filesystem: { allowRead: ["/opt"], allowWrite: ["/tmp"], denyWrite: [] },
   });
 
   const config = loadGuardConfig(dir);
 
-  assert.deepEqual(config.policy.allowedDomains, ["github.com", "npmjs.org"]);
   assert.deepEqual(config.policy.allowRead, [dir.cwd, "/opt"]);
   assert.deepEqual(config.policy.allowWrite, [
     dir.cwd,
@@ -182,10 +204,9 @@ test("absolutizes relative path patterns against the session cwd, so the fence c
   );
 });
 
-test("leaves domains, absolute paths and `~` patterns unrewritten", () => {
+test("leaves absolute paths and `~` patterns unrewritten", () => {
   const dir = fixtureDir();
   writeGlobal(dir, {
-    network: { allowedDomains: ["github.com"], deniedDomains: ["evil.test"] },
     filesystem: {
       denyRead: ["/Users", "~/secrets"],
       allowRead: [],
@@ -196,8 +217,6 @@ test("leaves domains, absolute paths and `~` patterns unrewritten", () => {
 
   const config = loadGuardConfig(dir);
 
-  assert.deepEqual(config.runtime.network.allowedDomains, ["github.com"]);
-  assert.deepEqual(config.runtime.network.deniedDomains, ["evil.test"]);
   assert.deepEqual(config.runtime.filesystem.denyRead, ["/Users", "~/secrets"]);
 });
 
@@ -271,6 +290,7 @@ test("tolerates prompt-era keys, reporting them as ignored rather than stripping
 
   assert.deepEqual(config.ignoredKeys, [
     "network.allowUnauthenticatedSocksProxy",
+    "network.allowedDomains",
     "network.sshProxy",
     "permissionPromptTimeoutSeconds",
   ]);

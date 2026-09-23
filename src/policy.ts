@@ -234,33 +234,5 @@ export function compilePathPolicy(
   };
 }
 
-const URL_PATTERN = /https?:\/\/([a-zA-Z0-9][a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g;
-
-/** Domains named by literal URLs in a command. */
-export function extractDomainsFromCommand(command: string): string[] {
-  const domains = new Set<string>();
-  let match: RegExpExecArray | null;
-  URL_PATTERN.lastIndex = 0;
-  while ((match = URL_PATTERN.exec(command)) !== null) {
-    if (match[1] !== undefined) domains.add(match[1]);
-  }
-  return [...domains];
-}
-
-export function domainMatchesPattern(domain: string, pattern: string): boolean {
-  if (pattern === "*") return true;
-  if (pattern.startsWith("*.")) {
-    const base = pattern.slice(2);
-    return domain === base || domain.endsWith("." + base);
-  }
-  return domain === pattern;
-}
-
-export function domainIsAllowed(
-  domain: string,
-  allowedDomains: readonly string[],
-): boolean {
-  return allowedDomains.some((pattern) =>
-    domainMatchesPattern(domain, pattern),
-  );
-}
+// Network access is deliberately not part of this policy: the guard fences the filesystem, and the
+// runtime is initialized without a domain allow-list so commands reach the network unrestricted.

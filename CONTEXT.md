@@ -29,7 +29,7 @@ A claim whose path has been resolved to a real, absolute location, so that two c
 _Avoid_: resolved path, normalized path, real path
 
 **Guard policy**:
-The configured rules the guard enforces: which path regions may be read and written, and which domains may be reached.
+The configured rules the guard enforces: which path regions may be read and written.
 _Avoid_: policy (ambiguous alone), rules
 
 **Path policy**:
@@ -37,11 +37,11 @@ The guard policy's path regions in canonical form, so that a claim and the regio
 _Avoid_: path rules
 
 **Sandbox fence**:
-The OS-level enforcement the sandbox runtime applies to a shell command's filesystem and network access.
+The OS-level enforcement the sandbox runtime applies to a shell command's filesystem access.
 _Avoid_: sandbox (ambiguous with the package), jail, container
 
 **Shell Tool**:
-A Tool whose filesystem and network access only the sandbox fence can enforce, so it needs a live fence to run at all.
+A Tool whose filesystem access only the sandbox fence can enforce, so it needs a live fence to run at all.
 _Avoid_: command Tool, bash
 
 **Guard**:
@@ -65,5 +65,5 @@ judge.
 _Avoid_: wrapper, proxy, dispatcher
 
 **Ignored key**:
-A recognised configuration key from the predecessor package that this guard reports and does not honour.
+A recognised configuration key that this guard reports and does not honour — a key from the predecessor package, or a network-policy key the runtime would enforce through a proxy this guard does not run.
 _Avoid_: unknown key — a key that is not recognised at all is an error, not an ignored key

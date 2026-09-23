@@ -12,8 +12,6 @@ import {
   canonicalizeAgainst,
   canonicalizeClaims,
   compilePathPolicy,
-  domainIsAllowed,
-  extractDomainsFromCommand,
   pathIsWithin,
   type CanonicalClaim,
   type Refusal,
@@ -26,9 +24,6 @@ export interface GuardPolicy {
   denyRead: string[];
   allowWrite: string[];
   denyWrite: string[];
-  /** Domains commands may reach. An empty list allows none, matching the runtime's own default. */
-  allowedDomains: string[];
-  deniedDomains?: string[];
 }
 
 export interface GuardOptions {
@@ -157,18 +152,6 @@ function refusalMessage(
   return `${refused}. Its access was inferred, not declared: declare it in the guard's \`tools\` config as {"fields": [${fields}]} with access "read" or "write". ${grant}`;
 }
 
-/** The first domain a command names that the guard policy does not allow, if any. */
-function refusedDomain(
-  command: string,
-  policy: GuardPolicy,
-): string | undefined {
-  for (const domain of extractDomainsFromCommand(command)) {
-    if (domainIsAllowed(domain, policy.deniedDomains ?? [])) return domain;
-    if (!domainIsAllowed(domain, policy.allowedDomains)) return domain;
-  }
-  return undefined;
-}
-
 /**
  * Build the `tool_call` handler: the guard's single seam.
  *
@@ -200,17 +183,8 @@ export function createGuard(options: GuardOptions): Guard {
 
     if (grantedTools.has(event.toolName)) return {};
 
-    if (mapped.kind === "command") {
-      const domain = refusedDomain(mapped.command, policy);
-      if (domain !== undefined) {
-        return {
-          block: true,
-          reason: `Guard refused tool "${event.toolName}": network access to "${domain}" is not in allowedDomains`,
-        };
-      }
-      // Filesystem access from a command is fenced by the OS, not by this handler.
-      return {};
-    }
+    // A command's filesystem access is fenced by the OS; its network access is not fenced at all.
+    if (mapped.kind === "command") return {};
 
     if (mapped.kind === "unmapped") {
       return unjudgeableDecision(mapped, event.toolName);

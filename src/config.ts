@@ -32,10 +32,41 @@ const LEGACY_KEYS = new Set([
 ]);
 
 /**
- * Fields the runtime requires but the predecessor's config files routinely omit.
+ * Network policy keys this guard does not honour.
  *
- * The empty lists are fail-closed on purpose: a config that omits `allowWrite` must not silently
- * gain write access to anything.
+ * Every key here takes effect only through the runtime's network proxy or its domain allow-list.
+ * The guard fences the filesystem and runs no such proxy, so honouring these would be a lie; they
+ * are reported and stripped instead, because a key the reader still believes is a fence is worse
+ * than no key at all. Network keys that are permissive local-IPC grants rather than restrictions —
+ * `allowUnixSockets`, `allowAllUnixSockets`, `allowLocalBinding`, `allowMachLookup` — are not
+ * listed and pass through untouched.
+ */
+const RETIRED_NETWORK_KEYS = [
+  "network.allowedDomains",
+  "network.deniedDomains",
+  "network.deniedDomainReasons",
+  "network.strictAllowlist",
+  "network.deniedResolvedAddresses",
+  "network.httpProxyPort",
+  "network.socksProxyPort",
+  "network.mitmProxy",
+  "network.tlsTerminate",
+  "network.parentProxy",
+  "network.filterRequest",
+] as const;
+
+/** Strip the `network.` prefix, matching how these keys are spelled in the merged config object. */
+function networkKey(dotted: string): string {
+  return dotted.slice("network.".length);
+}
+
+/**
+ * Fields the runtime's schema requires but the predecessor's config files routinely omit.
+ *
+ * The filesystem empty lists are fail-closed on purpose: a config that omits `allowWrite` must not
+ * silently gain write access to anything. The domain lists exist only so a file-borne config still
+ * validates; they are stripped again before the runtime is initialized (see
+ * {@link withoutNetworkPolicy}).
  */
 const DEFAULTS: {
   denyRead: string[];
@@ -51,20 +82,11 @@ const DEFAULTS: {
   denyWrite: [],
 };
 
-const ARRAY_KEYS = [
-  "network.allowedDomains",
-  "network.deniedDomains",
-  "filesystem.allowRead",
-  "filesystem.denyRead",
-  "filesystem.allowWrite",
-  "filesystem.denyWrite",
-] as const;
-
 /**
- * The path lists, whose relative spellings the guard and the OS fence would otherwise resolve
- * against different working directories. Domain lists must never be rewritten this way.
+ * The path lists, unioned across config layers and absolutized before either the guard or the OS
+ * fence sees them. Network keys are not paths and are never rewritten or unioned.
  */
-const PATH_KEYS = [
+const PATH_LISTS = [
   "filesystem.allowRead",
   "filesystem.denyRead",
   "filesystem.allowWrite",
@@ -127,7 +149,7 @@ function withKey(target: Json, dotted: string, value: unknown): void {
   objectAt(target, section)[key] = value;
 }
 
-/** The layers' path and domain lists, unioned so a project file adds to the global one. */
+/** The layers' path lists, unioned so a project file adds to the global one. */
 function unionList(
   globalConfig: Json,
   projectConfig: Json,
@@ -142,7 +164,8 @@ function unionList(
 /**
  * Layer the project config over the global one.
  *
- * Scalars and section objects are replaced; the six list keys are unioned. One merged object feeds
+ * Scalars and section objects are replaced; the four `filesystem` list keys are unioned. One merged
+ * object feeds
  * both the guard's policy and the runtime config, so the two layers cannot disagree about what is
  * allowed — a project file cannot quietly drop a global `denyRead` from the OS fence.
  */
@@ -154,7 +177,7 @@ function mergedConfig(globalConfig: Json, projectConfig: Json): Json {
       ...objectAt(projectConfig, section),
     };
   }
-  for (const dotted of ARRAY_KEYS) {
+  for (const dotted of PATH_LISTS) {
     const union = unionList(globalConfig, projectConfig, dotted);
     if (union !== undefined) withKey(merged, dotted, union);
   }
@@ -209,10 +232,10 @@ function canonicalPattern(pattern: string, cwd: string): string {
 /**
  * Remove the guard/fence ambiguity: the runtime resolves relative path patterns against ambient
  * `process.cwd()`, while the guard resolves its claims against the session working directory.
- * Rewriting the path lists here means both name the same region. Domain lists are never touched.
+ * Rewriting the path lists here means both name the same region.
  */
 function absolutizePaths(config: Json, cwd: string): void {
-  for (const dotted of PATH_KEYS) {
+  for (const dotted of PATH_LISTS) {
     const patterns = stringArray(layerValue(config, dotted));
     if (patterns === undefined) continue;
     withKey(
@@ -310,6 +333,25 @@ function toolsOverrides(config: Json): Record<string, ToolOverride> {
 }
 
 /**
+ * Drop the runtime's network-policy keys from the validated config.
+ *
+ * The guard fences the filesystem and leaves network access alone. The runtime treats an *absent*
+ * `network.allowedDomains` as "no network restriction" — an empty one is block-all — so removing it
+ * is what switches the network layer off, and the proxy it would have driven never starts. Every
+ * key in {@link RETIRED_NETWORK_KEYS} acts only through that proxy. `SandboxManager.initialize`
+ * accepts the stripped shape; the runtime's schema requires `allowedDomains` only to validate
+ * file-borne config, which is why these keys are validated above and removed here. Permissive
+ * local-IPC keys pass through untouched.
+ */
+function withoutNetworkPolicy(
+  parsed: SandboxRuntimeConfig,
+): SandboxRuntimeConfig {
+  const network: Record<string, unknown> = { ...parsed.network };
+  for (const dotted of RETIRED_NETWORK_KEYS) delete network[networkKey(dotted)];
+  return { ...parsed, network } as unknown as SandboxRuntimeConfig;
+}
+
+/**
  * Load the guard's policy from the existing sandbox config files: the global file in the agent
  * directory, then the project file under `.pi/`, with project values layered over global ones.
  */
@@ -371,7 +413,9 @@ export function loadGuardConfig(paths: {
   // One source of truth: the policy is read off the validated config, the same object the runtime
   // is initialized with, so the guard and the OS fence always agree.
   const filesystem = parsed.data.filesystem;
-  const network = parsed.data.network;
+  const retiredNetworkKeys = RETIRED_NETWORK_KEYS.filter(
+    (key) => layerValue(supplied, key) !== undefined,
+  );
 
   return {
     enabled,
@@ -380,12 +424,13 @@ export function loadGuardConfig(paths: {
       denyRead: filesystem.denyRead,
       allowWrite: filesystem.allowWrite,
       denyWrite: filesystem.denyWrite,
-      allowedDomains: network.allowedDomains ?? [],
-      deniedDomains: network.deniedDomains ?? [],
     },
     overrides: toolsOverrides(supplied),
-    ignoredKeys: dropped.filter((key) => LEGACY_KEYS.has(key)).sort(),
+    ignoredKeys: [
+      ...dropped.filter((key) => LEGACY_KEYS.has(key)),
+      ...retiredNetworkKeys,
+    ].sort(),
     configPaths: { global: globalPath, project: projectPath },
-    runtime: parsed.data,
+    runtime: withoutNetworkPolicy(parsed.data),
   };
 }

