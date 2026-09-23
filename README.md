@@ -19,7 +19,8 @@ runtime.
   package has never heard of it. When the guard cannot tell whether such a Tool reads or writes that
   path, it judges the claim against **both** the read and the write rules, and says so in the
   refusal; a session-start notice lists the Tools whose access was inferred, so a stricter-than-
-  needed classification can be corrected with a `tools` entry.
+  needed classification can be corrected with a `tools` entry. A Tool that only forwards its call to
+  another Tool is declared as a **pass-through Tool**, and the nested call is judged in its place.
 - **Shell commands** run inside the OS sandbox: macOS `sandbox-exec`, Linux `bwrap`, with the network
   allowlist enforced through a proxy.
 - **Unknown Tools are refused**, not allowed. A Tool whose paths cannot be determined is a Tool whose
@@ -84,6 +85,38 @@ knowing before you copy it:
   everything else. Nothing is writable until you say so.
 - `allowedDomains` must name real domains. `"*"` is rejected by the runtime, on purpose.
 
+### Tools the guard must be told about
+
+A `tools` entry takes one of two shapes. The first declares a Tool's own path fields and whether it
+reads or writes them:
+
+```json
+{ "format_md_tables": { "fields": ["path"], "access": "write" } }
+```
+
+`access: "none"` (with no `fields`, or an empty list) is the deliberate way to say a Tool touches no
+paths at all.
+
+The second declares a **pass-through Tool** — one whose only work is to invoke another Tool, like
+`@wolido/pi-lazy-tools`' `call_tool`. Name the fields that carry the target Tool's name and the
+parameters forwarded to it, and the guard unwraps the call and judges the target:
+
+```json
+{
+  "tools": {
+    "call_tool": { "passThrough": { "tool": "tool", "params": "params" } }
+  }
+}
+```
+
+Without that declaration a pass-through Tool is refused like any other Tool the guard cannot judge:
+its `params` bag is opaque, so nothing inside it is visible to schema introspection. Declaring it
+`access: "none"` instead would silently wave through every path its target touches, which is the
+hole this shape closes — if a config already declares it that way, replace the entry; the guard
+cannot detect the false assertion for you. The target must itself be judgeable — declare it by its
+path fields, or as another pass-through Tool; a pathless target takes
+`{ "fields": [], "access": "none" }`.
+
 ## Every key
 
 The `network` and `filesystem` sections are the runtime's schema; `enabled` and `tools` belong to
@@ -91,45 +124,45 @@ this package. Omitting an optional key leaves the runtime's own default in place
 
 <!-- config-keys:start -->
 
-| Key                               | Required                       | What it does                                                                         |
-| --------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------ |
-| `enabled`                         | no, defaults to `true`         | This package's off switch for the whole guard.                                       |
-| `tools`                           | no                             | Per-Tool overrides: `{ "fields": ["path"], "access": "read" \| "write" \| "none" }`. |
-| `filesystem.denyRead`             | yes, defaults to the home root | Paths no Tool may read, unless `allowRead` re-allows them.                           |
-| `filesystem.allowRead`            | no                             | Paths re-allowed beneath a `denyRead` region.                                        |
-| `filesystem.allowWrite`           | yes, defaults to nothing       | The only paths any Tool may write.                                                   |
-| `filesystem.denyWrite`            | yes, defaults to nothing       | Paths denied even inside `allowWrite`.                                               |
-| `filesystem.allowGitConfig`       | no                             | Permit reading `.git/config`, which is otherwise withheld.                           |
-| `filesystem.disabled`             | no                             | Turn the filesystem half of the sandbox off.                                         |
-| `network.allowedDomains`          | yes, defaults to nothing       | Domains commands may reach. Wildcards like `*.npmjs.org` are fine; `"*"` is not.     |
-| `network.deniedDomains`           | yes, defaults to nothing       | Domains to block regardless.                                                         |
-| `network.deniedDomainReasons`     | no                             | Explanations for specific denied domains.                                            |
-| `network.strictAllowlist`         | no                             | Deny anything not explicitly allowed, rather than only what is resolved.             |
-| `network.deniedResolvedAddresses` | no                             | Addresses to block after resolution.                                                 |
-| `network.allowUnixSockets`        | no                             | Unix socket paths commands may use.                                                  |
-| `network.allowAllUnixSockets`     | no                             | Skip the unix socket check entirely.                                                 |
-| `network.allowLocalBinding`       | no                             | Permit binding local ports.                                                          |
-| `network.allowMachLookup`         | no                             | macOS: additional Mach services to allow.                                            |
-| `network.httpProxyPort`           | no                             | Pin the HTTP proxy port instead of choosing one.                                     |
-| `network.socksProxyPort`          | no                             | Pin the SOCKS proxy port instead of choosing one.                                    |
-| `network.mitmProxy`               | no                             | Upstream's MITM proxy block; mutually exclusive with `tlsTerminate`.                 |
-| `network.filterRequest`           | no                             | Request-filtering hook (upstream feature).                                           |
-| `network.tlsTerminate`            | no                             | TLS termination block (upstream feature).                                            |
-| `network.parentProxy`             | no                             | Route the sandbox's proxies through an upstream proxy.                               |
-| `credentials`                     | no                             | Upstream's credential-masking block.                                                 |
-| `ripgrep`                         | no                             | Where to find `rg`, and how to run it.                                               |
-| `ignoreViolations`                | no                             | Violations to log without failing the command.                                       |
-| `mandatoryDenySearchDepth`        | no                             | How deep the runtime searches to plant its deny markers.                             |
-| `enableWeakerNestedSandbox`       | no                             | Relax the sandbox for running inside another one.                                    |
-| `enableWeakerNetworkIsolation`    | no                             | Relax network isolation.                                                             |
-| `allowAppleEvents`                | no                             | macOS: permit Apple Events.                                                          |
-| `allowPty`                        | no                             | Permit pseudo-terminal allocation.                                                   |
-| `seccomp`                         | no                             | Linux: seccomp tuning block.                                                         |
-| `bwrapPath`                       | no                             | Linux: path to `bwrap`.                                                              |
-| `socatPath`                       | no                             | Path to `socat`.                                                                     |
-| `javaAgentJarPath`                | no                             | Path to the JVM agent jar.                                                           |
-| `windows`                         | no                             | Windows: sandbox tuning block (upstream support is alpha).                           |
-| `git`                             | no                             | Git-specific allowances.                                                             |
+| Key                               | Required                       | What it does                                                                                                                                                             |
+| --------------------------------- | ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `enabled`                         | no, defaults to `true`         | This package's off switch for the whole guard.                                                                                                                           |
+| `tools`                           | no                             | Per-Tool overrides: `{ "fields": ["path"], "access": "read" \| "write" \| "none" }`, or a pass-through Tool `{ "passThrough": { "tool": "tool", "params": "params" } }`. |
+| `filesystem.denyRead`             | yes, defaults to the home root | Paths no Tool may read, unless `allowRead` re-allows them.                                                                                                               |
+| `filesystem.allowRead`            | no                             | Paths re-allowed beneath a `denyRead` region.                                                                                                                            |
+| `filesystem.allowWrite`           | yes, defaults to nothing       | The only paths any Tool may write.                                                                                                                                       |
+| `filesystem.denyWrite`            | yes, defaults to nothing       | Paths denied even inside `allowWrite`.                                                                                                                                   |
+| `filesystem.allowGitConfig`       | no                             | Permit reading `.git/config`, which is otherwise withheld.                                                                                                               |
+| `filesystem.disabled`             | no                             | Turn the filesystem half of the sandbox off.                                                                                                                             |
+| `network.allowedDomains`          | yes, defaults to nothing       | Domains commands may reach. Wildcards like `*.npmjs.org` are fine; `"*"` is not.                                                                                         |
+| `network.deniedDomains`           | yes, defaults to nothing       | Domains to block regardless.                                                                                                                                             |
+| `network.deniedDomainReasons`     | no                             | Explanations for specific denied domains.                                                                                                                                |
+| `network.strictAllowlist`         | no                             | Deny anything not explicitly allowed, rather than only what is resolved.                                                                                                 |
+| `network.deniedResolvedAddresses` | no                             | Addresses to block after resolution.                                                                                                                                     |
+| `network.allowUnixSockets`        | no                             | Unix socket paths commands may use.                                                                                                                                      |
+| `network.allowAllUnixSockets`     | no                             | Skip the unix socket check entirely.                                                                                                                                     |
+| `network.allowLocalBinding`       | no                             | Permit binding local ports.                                                                                                                                              |
+| `network.allowMachLookup`         | no                             | macOS: additional Mach services to allow.                                                                                                                                |
+| `network.httpProxyPort`           | no                             | Pin the HTTP proxy port instead of choosing one.                                                                                                                         |
+| `network.socksProxyPort`          | no                             | Pin the SOCKS proxy port instead of choosing one.                                                                                                                        |
+| `network.mitmProxy`               | no                             | Upstream's MITM proxy block; mutually exclusive with `tlsTerminate`.                                                                                                     |
+| `network.filterRequest`           | no                             | Request-filtering hook (upstream feature).                                                                                                                               |
+| `network.tlsTerminate`            | no                             | TLS termination block (upstream feature).                                                                                                                                |
+| `network.parentProxy`             | no                             | Route the sandbox's proxies through an upstream proxy.                                                                                                                   |
+| `credentials`                     | no                             | Upstream's credential-masking block.                                                                                                                                     |
+| `ripgrep`                         | no                             | Where to find `rg`, and how to run it.                                                                                                                                   |
+| `ignoreViolations`                | no                             | Violations to log without failing the command.                                                                                                                           |
+| `mandatoryDenySearchDepth`        | no                             | How deep the runtime searches to plant its deny markers.                                                                                                                 |
+| `enableWeakerNestedSandbox`       | no                             | Relax the sandbox for running inside another one.                                                                                                                        |
+| `enableWeakerNetworkIsolation`    | no                             | Relax network isolation.                                                                                                                                                 |
+| `allowAppleEvents`                | no                             | macOS: permit Apple Events.                                                                                                                                              |
+| `allowPty`                        | no                             | Permit pseudo-terminal allocation.                                                                                                                                       |
+| `seccomp`                         | no                             | Linux: seccomp tuning block.                                                                                                                                             |
+| `bwrapPath`                       | no                             | Linux: path to `bwrap`.                                                                                                                                                  |
+| `socatPath`                       | no                             | Path to `socat`.                                                                                                                                                         |
+| `javaAgentJarPath`                | no                             | Path to the JVM agent jar.                                                                                                                                               |
+| `windows`                         | no                             | Windows: sandbox tuning block (upstream support is alpha).                                                                                                               |
+| `git`                             | no                             | Git-specific allowances.                                                                                                                                                 |
 
 <!-- config-keys:end -->
 

@@ -53,8 +53,16 @@ A path, or a whole Tool, that a session has opened by explicit command. It lasts
 _Avoid_: permission, exception, allow-list entry
 
 **Tool override**:
-A configuration entry declaring a Tool's path fields and access, for a Tool the guard cannot judge by introspection.
+A configuration entry declaring a Tool's path fields and access — or, for a pass-through Tool, the
+fields that carry its target — for a Tool the guard cannot judge by introspection.
 _Avoid_: tool config, mapping
+
+**Pass-through Tool**:
+A Tool whose only work is to invoke another Tool, so a call to it must be judged as a call to the Tool
+it names. The `tools` config entry names the two fields that carry the target's name and its
+forwarded parameters; until it is declared, the Tool is refused like any other Tool the guard cannot
+judge.
+_Avoid_: wrapper, proxy, dispatcher
 
 **Ignored key**:
 A recognised configuration key from the predecessor package that this guard reports and does not honour.

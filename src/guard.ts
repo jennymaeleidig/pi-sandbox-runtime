@@ -3,8 +3,10 @@ import type { ToolInfo } from "@earendil-works/pi-coding-agent";
 import {
   createToolInventory,
   type Access,
+  type ForwardedCall,
   type ToolCallLike,
   type ToolOverride,
+  type UnjudgedCall,
 } from "./claims.ts";
 import {
   canonicalizeAgainst,
@@ -67,7 +69,25 @@ export type GrantResult =
 
 /** A call the guard could not judge, whatever the cause. */
 export type Unjudgeable =
-  { kind: "unmapped" } | { kind: "malformed-claim"; claim: CanonicalClaim };
+  UnjudgedCall | { kind: "malformed-claim"; claim: CanonicalClaim };
+
+/**
+ * The refusal for a command a pass-through Tool forwarded.
+ *
+ * It sits beside `unjudgeableDecision` so the refusal wording stays in one place, and it is checked
+ * ahead of a Tool grant: a grant admits what a Tool touches, but it cannot vouch for a command the
+ * OS fence never wrapped.
+ */
+function forwardedCommandDecision(
+  forwarded: ForwardedCall,
+  toolName: string,
+): GuardDecision {
+  const target = forwarded.target ?? "a Shell Tool";
+  return {
+    block: true,
+    reason: `Guard refused tool "${toolName}": pass-through Tool "${forwarded.forwardedBy}" forwards to "${target}", whose access only the OS fence can enforce, and the guard cannot confirm the fence wraps a forwarded command.`,
+  };
+}
 
 /**
  * The one fail-closed outcome for a call the guard could not judge.
@@ -81,6 +101,18 @@ export function unjudgeableDecision(
   toolName: string,
 ): GuardDecision {
   if (cause.kind === "unmapped") {
+    if (cause.forwarded?.target !== undefined) {
+      return {
+        block: true,
+        reason: `Guard refused tool "${toolName}": pass-through Tool "${cause.forwarded.forwardedBy}" forwards to "${cause.forwarded.target}", and no path in that call could be judged against the guard policy. Declare "${cause.forwarded.target}" in the guard's \`tools\` config with its path fields and access, or as a pass-through Tool if it forwards further.`,
+      };
+    }
+    if (cause.forwarded !== undefined) {
+      return {
+        block: true,
+        reason: `Guard refused tool "${toolName}": pass-through Tool "${cause.forwarded.forwardedBy}" names no target Tool in this call, so no path could be judged against the guard policy.`,
+      };
+    }
     return {
       block: true,
       reason: `Guard refused tool "${toolName}": no path in this call could be judged against the guard policy. Declare the Tool in the guard's \`tools\` config with its path fields and access.`,
@@ -155,12 +187,18 @@ export function createGuard(options: GuardOptions): Guard {
     [...grantedPaths].some((granted) => pathIsWithin(claim.path, granted));
 
   const guard = (event: ToolCallLike): GuardDecision => {
-    if (grantedTools.has(event.toolName)) return {};
-
+    // Mapped before the grant check: a Tool grant must not admit a forwarded command, which the
+    // fence guarantee turns on rather than on the path policy the grant speaks to.
     const mapped = inventory.touches({
       toolName: event.toolName,
       input: event.input,
     });
+
+    if (mapped.kind === "command" && mapped.forwarded !== undefined) {
+      return forwardedCommandDecision(mapped.forwarded, event.toolName);
+    }
+
+    if (grantedTools.has(event.toolName)) return {};
 
     if (mapped.kind === "command") {
       const domain = refusedDomain(mapped.command, policy);
@@ -175,7 +213,7 @@ export function createGuard(options: GuardOptions): Guard {
     }
 
     if (mapped.kind === "unmapped") {
-      return unjudgeableDecision({ kind: "unmapped" }, event.toolName);
+      return unjudgeableDecision(mapped, event.toolName);
     }
 
     if (mapped.kind !== "claims") return {};

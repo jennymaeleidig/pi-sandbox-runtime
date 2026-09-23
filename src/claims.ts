@@ -24,16 +24,37 @@ export interface Claim {
 }
 
 /** A Tool's declared path fields and access, from the guard's own config. */
-export interface ToolOverride {
+export interface PathToolOverride {
   fields: string[];
   access: Access | "none";
 }
 
+/**
+ * A Tool declared to be a pass-through: it carries another Tool's name and that Tool's parameters in
+ * the two named fields, and the guard judges the nested call instead of this one.
+ */
+export interface PassThroughToolOverride {
+  passThrough: { tool: string; params: string };
+}
+
+export type ToolOverride = PathToolOverride | PassThroughToolOverride;
+
+/** A call a pass-through Tool forwarded: which Tool forwarded it, and the target it named. */
+export interface ForwardedCall {
+  /** The pass-through Tool that forwarded the call. */
+  forwardedBy: string;
+  /** The Tool it named, when the call named one. */
+  target?: string;
+}
+
+/** A call the guard could not judge, and the pass-through Tool that reached it, if any. */
+export type UnjudgedCall = { kind: "unmapped"; forwarded?: ForwardedCall };
+
 export type ClaimResult =
   | { kind: "claims"; claims: Claim[] }
-  | { kind: "command"; command: string }
+  | { kind: "command"; command: string; forwarded?: ForwardedCall }
   | { kind: "none" }
-  | { kind: "unmapped" };
+  | UnjudgedCall;
 
 /** A Tool call, as pi hands it to the guard. */
 export interface ToolCallLike {
@@ -142,6 +163,74 @@ function stringFieldNames(tool: ToolInfo): string[] {
 }
 
 /**
+ * How deep a pass-through chain may go before the guard gives up and refuses. A pass-through Tool
+ * that names itself, directly or through another, would otherwise recurse forever.
+ */
+const MAX_FORWARD_DEPTH = 4;
+
+/** Whether this override declares a pass-through rather than the Tool's own paths. */
+function isPassThrough(
+  override: ToolOverride,
+): override is PassThroughToolOverride {
+  return "passThrough" in override;
+}
+
+/** The refusal a pass-through Tool earns when the call it forwarded could not be judged. */
+function unjudgedForward(forwardedBy: string, target?: string): ClaimResult {
+  return {
+    kind: "unmapped",
+    forwarded: target === undefined ? { forwardedBy } : { forwardedBy, target },
+  };
+}
+
+/**
+ * Map a call a pass-through Tool forwarded to its target.
+ *
+ * The declaration names the fields; only the target Tool's own mapping decides the claims, so a
+ * forwarded call is judged exactly as a direct call to that Tool would be. Any failure to resolve
+ * the target or its parameters is `unmapped`, carrying the target when it is known so the refusal
+ * can name what the user must declare.
+ */
+function mapForwardedCall(
+  call: ToolCallLike,
+  declaration: PassThroughToolOverride["passThrough"],
+  deps: ToolInventoryDeps,
+  depth: number,
+): ClaimResult {
+  const target = call.input[declaration.tool];
+  if (typeof target !== "string" || target.length === 0) {
+    return unjudgedForward(call.toolName);
+  }
+  const params = call.input[declaration.params];
+  if (typeof params !== "object" || params === null || Array.isArray(params)) {
+    return unjudgedForward(call.toolName, target);
+  }
+  // Past the bound the guard stops following the chain, and names the last target so the refusal
+  // still points at a Tool rather than at "a Tool you must declare".
+  if (depth >= MAX_FORWARD_DEPTH) {
+    return unjudgedForward(call.toolName, target);
+  }
+  const nested = mapToolCall(
+    { toolName: target, input: params as Record<string, unknown> },
+    deps,
+    depth + 1,
+  );
+  // A command's provenance is carried so the guard can refuse it: the OS fence wraps the shell Tool
+  // this package registers, not a command a pass-through resolved and ran itself.
+  if (nested.kind === "command") {
+    return nested.forwarded === undefined
+      ? { ...nested, forwarded: { forwardedBy: call.toolName, target } }
+      : nested;
+  }
+  // The inner cause is more specific than this one, so keep it; only a bare `unmapped` from the
+  // target is attributed to the pass-through Tool that forwarded the call.
+  if (nested.kind === "unmapped" && nested.forwarded === undefined) {
+    return unjudgedForward(call.toolName, target);
+  }
+  return nested;
+}
+
+/**
  * Map a Tool call to the paths it touches.
  *
  * Precedence: command Tools first (a `tools` override must never be able to turn the fence's
@@ -152,7 +241,11 @@ function stringFieldNames(tool: ToolInfo): string[] {
  * writes them, because that is semantic and not derivable from a name. Such a claim is marked
  * inferred and the guard judges it against both rule sets.
  */
-function mapToolCall(call: ToolCallLike, deps: ToolInventoryDeps): ClaimResult {
+function mapToolCall(
+  call: ToolCallLike,
+  deps: ToolInventoryDeps,
+  depth = 0,
+): ClaimResult {
   const { toolName, input } = call;
   const { overrides, cwd } = deps;
   if (needsLiveFence(toolName)) {
@@ -165,6 +258,9 @@ function mapToolCall(call: ToolCallLike, deps: ToolInventoryDeps): ClaimResult {
 
   const override = overrides[toolName];
   if (override !== undefined) {
+    if (isPassThrough(override)) {
+      return mapForwardedCall(call, override.passThrough, deps, depth);
+    }
     const access = override.access;
     if (access === "none") return { kind: "none" };
     const paths = pathValues(input, override.fields);

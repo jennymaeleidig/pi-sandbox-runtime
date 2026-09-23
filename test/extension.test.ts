@@ -281,6 +281,69 @@ test("blocks a Tool call the policy refuses", async () => {
   assert.match(decision.reason ?? "", /denied/);
 });
 
+test("judges a pass-through Tool's nested call, not just the outer one", async () => {
+  writeConfig({
+    ...validConfig,
+    tools: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+  });
+  const host = fakePi({
+    tools: [
+      toolSchema("call_tool", {
+        tool: { type: "string" },
+        params: { type: "object" },
+      }),
+      toolSchema("format_md_tables", { path: { type: "string" } }),
+    ],
+  });
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+  await startSession(host);
+
+  const decision = (await host.call("tool_call", {
+    type: "tool_call",
+    toolCallId: "call-forward",
+    toolName: "call_tool",
+    input: {
+      tool: "format_md_tables",
+      params: { path: join(denied, "file.md") },
+    },
+  })) as { block?: boolean; reason?: string };
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /file\.md/);
+});
+
+test("refuses a pass-through Tool forwarded to a shell Tool", async () => {
+  writeConfig({
+    ...validConfig,
+    tools: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+  });
+  const host = fakePi({
+    tools: [
+      toolSchema("call_tool", {
+        tool: { type: "string" },
+        params: { type: "object" },
+      }),
+      toolSchema("bash", { command: { type: "string" } }),
+    ],
+  });
+  guardExtension(host.pi, { runtime: fakeRuntime(), agentDir });
+  await startSession(host);
+
+  const decision = (await host.call("tool_call", {
+    type: "tool_call",
+    toolCallId: "call-forward-bash",
+    toolName: "call_tool",
+    input: { tool: "bash", params: { command: "curl https://example.com" } },
+  })) as { block?: boolean; reason?: string };
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /fence/);
+});
+
 test("fences user-run shell commands through the sandbox too", async () => {
   writeConfig(validConfig);
   const host = fakePi();

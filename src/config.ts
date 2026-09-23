@@ -6,7 +6,11 @@ import {
   type SandboxRuntimeConfig,
 } from "@anthropic-ai/sandbox-runtime";
 
-import type { ToolOverride } from "./claims.ts";
+import type {
+  PassThroughToolOverride,
+  PathToolOverride,
+  ToolOverride,
+} from "./claims.ts";
 import type { GuardPolicy } from "./guard.ts";
 import { canonicalizeAgainst, isHomeRelative } from "./policy.ts";
 
@@ -229,6 +233,67 @@ function assertToolsMapIsAnObject(config: Json, path: string): void {
   }
 }
 
+/** The `passThrough` entry: the fields carrying the target Tool's name and its forwarded parameters. */
+function passThroughOverride(
+  name: string,
+  value: Json,
+): PassThroughToolOverride {
+  const passThrough = value["passThrough"];
+  if (!isJsonObject(passThrough)) {
+    throw new Error(
+      `sandbox.json: tools.${name}.passThrough must be an object naming the target Tool's fields`,
+    );
+  }
+  // A pass-through Tool has no path claims of its own; mixing the two forms would leave the guard
+  // unsure whether to judge the Tool or the Tool it forwards to.
+  if (value["access"] !== undefined || value["fields"] !== undefined) {
+    throw new Error(
+      `sandbox.json: tools.${name} declares passThrough, so it must not also declare fields or access`,
+    );
+  }
+  const tool = passThrough["tool"];
+  if (typeof tool !== "string" || tool.length === 0) {
+    throw new Error(
+      `sandbox.json: tools.${name}.passThrough.tool must name the field carrying the target Tool`,
+    );
+  }
+  const params = passThrough["params"];
+  if (typeof params !== "string" || params.length === 0) {
+    throw new Error(
+      `sandbox.json: tools.${name}.passThrough.params must name the field carrying the forwarded parameters`,
+    );
+  }
+  return { passThrough: { tool, params } };
+}
+
+/** The path-bearing entry: the Tool's own path fields, and whether the guard judges them read or write. */
+function pathOverride(name: string, value: Json): PathToolOverride {
+  const access = value["access"];
+  if (access !== "read" && access !== "write" && access !== "none") {
+    throw new Error(
+      `sandbox.json: tools.${name}.access must be one of "read", "write", "none"`,
+    );
+  }
+  // `access: "none"` says the Tool touches no paths, so it needs no fields: an absent `fields`
+  // key is the documented spelling of that, alongside `fields: []`.
+  const rawFields = value["fields"];
+  const fields = rawFields === undefined && access === "none" ? [] : rawFields;
+  if (!Array.isArray(fields) || !fields.every((f) => typeof f === "string")) {
+    throw new Error(
+      `sandbox.json: tools.${name}.fields must be an array of strings`,
+    );
+  }
+  // An override that names no fields, yet declares an access, would be judged as touching no
+  // paths and silently allowed — protection below even the name-heuristic default. "none" is the
+  // only deliberate way to say a Tool touches no paths, so anything else here is a config error.
+  if (access !== "none" && fields.length === 0) {
+    throw new Error(
+      `sandbox.json: tools.${name}.fields names no path fields; use access "none" if ${name} touches no paths`,
+    );
+  }
+  return { fields, access };
+}
+
 function toolsOverrides(config: Json): Record<string, ToolOverride> {
   const tools = objectAt(config, "tools");
   const overrides: Record<string, ToolOverride> = {};
@@ -236,31 +301,10 @@ function toolsOverrides(config: Json): Record<string, ToolOverride> {
     if (!isJsonObject(value)) {
       throw new Error(`sandbox.json: tools.${name} must be an object`);
     }
-    const access = value["access"];
-    if (access !== "read" && access !== "write" && access !== "none") {
-      throw new Error(
-        `sandbox.json: tools.${name}.access must be one of "read", "write", "none"`,
-      );
-    }
-    // `access: "none"` says the Tool touches no paths, so it needs no fields: an absent `fields`
-    // key is the documented spelling of that, alongside `fields: []`.
-    const rawFields = value["fields"];
-    const fields =
-      rawFields === undefined && access === "none" ? [] : rawFields;
-    if (!Array.isArray(fields) || !fields.every((f) => typeof f === "string")) {
-      throw new Error(
-        `sandbox.json: tools.${name}.fields must be an array of strings`,
-      );
-    }
-    // An override that names no fields, yet declares an access, would be judged as touching no
-    // paths and silently allowed — protection below even the name-heuristic default. "none" is the
-    // only deliberate way to say a Tool touches no paths, so anything else here is a config error.
-    if (access !== "none" && fields.length === 0) {
-      throw new Error(
-        `sandbox.json: tools.${name}.fields names no path fields; use access "none" if ${name} touches no paths`,
-      );
-    }
-    overrides[name] = { fields, access };
+    overrides[name] =
+      value["passThrough"] !== undefined
+        ? passThroughOverride(name, value)
+        : pathOverride(name, value);
   }
   return overrides;
 }

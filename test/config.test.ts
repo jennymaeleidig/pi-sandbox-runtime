@@ -421,6 +421,49 @@ test("accepts access none with no fields key at all, since it names no paths", (
   });
 });
 
+test("reads a declared pass-through Tool, so a forwarded call can be unwrapped", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+  });
+
+  assert.deepEqual(loadGuardConfig(dir).overrides, {
+    call_tool: { passThrough: { tool: "tool", params: "params" } },
+  });
+});
+
+test("refuses a pass-through declaration whose field names are missing or not strings", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: { call_tool: { passThrough: { tool: "tool" } } },
+  });
+
+  assert.throws(
+    () => loadGuardConfig(dir),
+    /tools\.call_tool\.passThrough\.params/,
+  );
+});
+
+test("refuses a pass-through declaration that also declares path fields", () => {
+  const dir = fixtureDir();
+  writeGlobal(dir, {
+    filesystem: { denyRead: [], allowRead: [], allowWrite: [], denyWrite: [] },
+    tools: {
+      call_tool: {
+        fields: ["path"],
+        access: "read",
+        passThrough: { tool: "tool", params: "params" },
+      },
+    },
+  });
+
+  assert.throws(() => loadGuardConfig(dir), /tools\.call_tool/);
+});
+
 test("an absent config file is not an error", () => {
   const dir = fixtureDir();
 

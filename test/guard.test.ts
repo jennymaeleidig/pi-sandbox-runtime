@@ -407,6 +407,115 @@ test("allows a Tool declared as touching no paths", () => {
   assert.deepEqual(guard({ toolName: "no_path_tool", input: {} }), {});
 });
 
+test("refuses a pass-through Tool whose forwarded call touches a denied path", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [toolSchema("format_md_tables", { path: { type: "string" } })],
+    overrides: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "call_tool",
+    input: {
+      tool: "format_md_tables",
+      params: { path: join(denied, "file.md") },
+    },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /denyRead/);
+  assert.match(decision.reason ?? "", /file\.md/);
+});
+
+test("allows a pass-through Tool whose forwarded call stays inside allowWrite", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [toolSchema("format_md_tables", { path: { type: "string" } })],
+    overrides: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+    cwd: root,
+  });
+
+  assert.deepEqual(
+    guard({
+      toolName: "call_tool",
+      input: {
+        tool: "format_md_tables",
+        params: { path: join(allowed, "file.md") },
+      },
+    }),
+    {},
+  );
+});
+
+test("a pass-through refusal names the target the guard could not judge", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [toolSchema("obs_recall", { query: { type: "string" } })],
+    overrides: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+    cwd: root,
+  });
+
+  const decision = guard({
+    toolName: "call_tool",
+    input: { tool: "obs_recall", params: { query: "x" } },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /obs_recall/);
+  assert.match(decision.reason ?? "", /Declare/);
+});
+
+test("refuses a pass-through Tool that forwards to a command Tool", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+    cwd: root,
+  });
+
+  // The OS fence wraps the shell Tool this package registers; a forwarded command resolves the
+  // Tool's own definition and runs outside that fence, so the guard refuses rather than assume.
+  const decision = guard({
+    toolName: "call_tool",
+    input: { tool: "bash", params: { command: "curl https://example.com" } },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /fence/);
+  assert.match(decision.reason ?? "", /bash/);
+});
+
+test("a tool grant does not admit a forwarded command", () => {
+  const guard = createGuard({
+    policy,
+    tools: () => [],
+    overrides: {
+      call_tool: { passThrough: { tool: "tool", params: "params" } },
+    },
+    cwd: root,
+  });
+  guard.grantTool("call_tool");
+
+  // A grant speaks to what a Tool touches under the path policy; it cannot vouch for a command the
+  // OS fence never wrapped, so the fence refusal must hold ahead of the grant.
+  const decision = guard({
+    toolName: "call_tool",
+    input: { tool: "bash", params: { command: "curl https://example.com" } },
+  });
+
+  assert.equal(decision.block, true);
+  assert.match(decision.reason ?? "", /fence/);
+});
+
 test("refuses a command naming a domain outside allowedDomains", () => {
   const guard = createGuard({
     policy,
