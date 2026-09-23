@@ -35,7 +35,7 @@ export interface CanonicalClaim {
   fields?: string[];
 }
 
-/** The path regions of the guard policy, without the domain lists. */
+/** The path regions of the guard policy. */
 export interface PathRegions {
   allowRead: string[];
   denyRead: string[];

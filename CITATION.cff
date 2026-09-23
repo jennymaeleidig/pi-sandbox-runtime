@@ -26,7 +26,7 @@ references:
     license: MIT
     notes: >-
       Source of this package's src/policy.ts (path canonicalization, glob matching) and of the
-      sandboxed bash operations adapted into src/sandbox.ts (ssh-over-SOCKS shim, detached
+      sandboxed bash operations adapted into src/sandbox.ts (detached
       process-group kill, stdio draining on exit).
   - type: software
     title: pi-mono

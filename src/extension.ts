@@ -23,7 +23,7 @@ import {
 } from "./sandbox.ts";
 
 export interface GuardExtensionDeps {
-  /** Replaced in tests, so the wiring can be exercised without the runtime's proxy processes. */
+  /** Replaced in tests, so the wiring can be exercised without booting the OS sandbox. */
   runtime?: SandboxRuntime;
   /** Where `sandbox.json` lives. Defaults to pi's agent directory. */
   agentDir?: string;

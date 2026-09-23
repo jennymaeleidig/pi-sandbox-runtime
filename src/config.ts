@@ -164,10 +164,10 @@ function unionList(
 /**
  * Layer the project config over the global one.
  *
- * Scalars and section objects are replaced; the four `filesystem` list keys are unioned. One merged
- * object feeds
- * both the guard's policy and the runtime config, so the two layers cannot disagree about what is
- * allowed — a project file cannot quietly drop a global `denyRead` from the OS fence.
+ * Scalars and individual section keys are replaced by the project's value; the four `filesystem`
+ * list keys are unioned. One merged object feeds both the guard's policy and the runtime config, so
+ * the two layers cannot disagree about what is allowed — a project file cannot quietly drop a
+ * global `denyRead` from the OS fence.
  */
 function mergedConfig(globalConfig: Json, projectConfig: Json): Json {
   const merged: Json = { ...globalConfig, ...projectConfig };

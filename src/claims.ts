@@ -233,8 +233,8 @@ function mapForwardedCall(
 /**
  * Map a Tool call to the paths it touches.
  *
- * Precedence: command Tools first (a `tools` override must never be able to turn the fence's
- * network check off), then an explicit config entry, then a known core Tool, then the Tool's own
+ * Precedence: command Tools first (a `tools` override must never be able to exempt a shell command
+ * from the OS fence), then an explicit config entry, then a known core Tool, then the Tool's own
  * advertised parameter schema. Anything left over is `unmapped` and the guard refuses it.
  *
  * Introspection discovers *which* fields are paths; it does not guess whether the Tool reads or

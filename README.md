@@ -21,8 +21,9 @@ runtime.
   refusal; a session-start notice lists the Tools whose access was inferred, so a stricter-than-
   needed classification can be corrected with a `tools` entry. A Tool that only forwards its call to
   another Tool is declared as a **pass-through Tool**, and the nested call is judged in its place.
-- **Shell commands** run inside the OS sandbox: macOS `sandbox-exec`, Linux `bwrap`, with the network
-  allowlist enforced through a proxy.
+- **Shell commands** run inside the OS sandbox: macOS `sandbox-exec`, Linux `bwrap`, and the
+  runtime's own Windows backend. The fence covers the filesystem only; network access is left
+  unrestricted (see below).
 - **Unknown Tools are refused**, not allowed. A Tool whose paths cannot be determined is a Tool whose
   access cannot be judged.
 - **Fail closed.** An invalid config, a missing runtime dependency, an unsupported platform, or a
@@ -37,8 +38,9 @@ pi install /absolute/path/to/pi-sandbox-runtime
 pi install git:git@github.com:jennymaeleidig/pi-sandbox-runtime
 ```
 
-Requires Node >= 20.11.0. On macOS and Linux the runtime needs `ripgrep`, which this package checks
-before the sandbox starts and reports plainly if it is missing.
+Requires Node >= 20.11.0. On Linux the runtime needs `ripgrep` (`rg`) as well as `bwrap` and
+`socat`; macOS needs no extra tool. This package runs the runtime's dependency check before the
+sandbox starts and refuses the session with the missing tool named.
 
 ## Configuration
 
@@ -49,13 +51,13 @@ Two files are read, and both may be absent:
 | Global  | `~/.pi/agent/sandbox.json`   |
 | Project | `<project>/.pi/sandbox.json` |
 
-The project file is layered over the global one: scalars and the `network` / `filesystem` sections
-are replaced, while the four `filesystem` path lists are **unioned**, and the `tools` map is merged
-per Tool name. That union is deliberate — a project file cannot silently drop a global `denyRead`
-from either the guard or the OS fence. `enabled` is replace-not-merge, so a project can switch the
-guard off for itself. A key the guard does not recognise is an error rather than a shrug: a key you
-believe is protection but which is ignored is worse than no protection. Keys it recognises but no
-longer honours are reported at session start instead of being silently dropped.
+The project file is layered over the global one: scalars and individual `network` / `filesystem`
+keys are replaced by the project's value, the four `filesystem` path lists are **unioned**, and the
+`tools` map is merged per Tool name. That union is deliberate — a project file cannot silently drop
+a global `denyRead` from either the guard or the OS fence. `enabled` is replace-not-merge, so a
+project can switch the guard off for itself. A key the guard does not recognise is an error rather
+than a shrug: a key you believe is protection but which is ignored is worse than no protection. Keys
+it recognises but no longer honours are reported at session start instead of being silently dropped.
 
 ```json
 {
@@ -83,8 +85,9 @@ knowing before you copy it:
 - The guard fences the **filesystem only**. It initializes the runtime without a domain allow-list,
   which is what leaves network access unrestricted, so no network proxy runs.
   `network.allowedDomains` and `network.deniedDomains` are read, reported as ignored, and stripped;
-  the rest of the `network` block is passed through but only matters when a proxy is running, which
-  it is not here.
+  the rest of the `network` block passes through untouched, because those keys (`allowUnixSockets`,
+  `allowAllUnixSockets`, `allowLocalBinding`, `allowMachLookup`) grant local IPC access rather than
+  restrict anything.
 
 ### Tools the guard must be told about
 

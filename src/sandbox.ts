@@ -29,7 +29,6 @@ export interface SandboxRuntime {
     command: string,
     shell?: string,
   ): Promise<{ argv: string[]; env: NodeJS.ProcessEnv }>;
-  getSocksProxyPort(): number | undefined;
   cleanupAfterCommand(): void;
   reset(): Promise<void>;
 }
@@ -73,23 +72,9 @@ export function createSandboxRuntime(): SandboxRuntime {
       SandboxManager.wrapWithSandbox(command, shell),
     wrapWithSandboxArgv: (command, shell) =>
       SandboxManager.wrapWithSandboxArgv(command, shell),
-    getSocksProxyPort: () => SandboxManager.getSocksProxyPort(),
     cleanupAfterCommand: () => SandboxManager.cleanupAfterCommand(),
     reset: () => SandboxManager.reset(),
   };
-}
-
-/**
- * OpenSSH ignores `ALL_PROXY`, unlike most tools that honour the runtime's network proxy, so on
- * macOS install a shell function that routes `ssh` through the runtime's local SOCKS proxy.
- */
-function sshProxyShim(
-  runtime: SandboxRuntime,
-  platform: NodeJS.Platform,
-): string {
-  const port = runtime.getSocksProxyPort();
-  if (platform !== "darwin" || port === undefined) return "";
-  return `ssh() { /usr/bin/ssh -o 'ProxyCommand=/usr/bin/nc -X 5 -x localhost:${port} %h %p' "$@"; }; `;
 }
 
 /**
@@ -180,8 +165,8 @@ function waitForChildProcess(child: ChildProcess): Promise<number | null> {
 /**
  * Bash operations that run every command inside the OS sandbox.
  *
- * The guard's `tool_call` handler judges a command's network hosts before it runs; this is what
- * fences its filesystem access, since only the OS can do that reliably.
+ * This is the fence: every command runs inside the OS sandbox, whose filesystem rules come from the
+ * same policy the guard judges Tools by, since only the OS can enforce them reliably.
  */
 export function createSandboxedBashOps(
   runtime: SandboxRuntime,
@@ -209,7 +194,7 @@ export function createSandboxedBashOps(
         childEnv = { ...plan.env, ...env };
       } else {
         const wrappedCommand = await runtime.wrapWithSandbox(
-          `${sshProxyShim(runtime, platform)}${command}`,
+          command,
           shell.shell,
         );
         if (shell.commandTransport === "stdin") {

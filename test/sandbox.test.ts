@@ -15,9 +15,7 @@ const cwd = mkdtempSync(join(tmpdir(), "guard-cwd-"));
  * what the guard owes the runtime is a wrapping call and a cleanup call, and that contract is what
  * these tests pin.
  */
-function fakeRuntime(
-  options: { socksProxyPort?: number } = {},
-): SandboxRuntime & {
+function fakeRuntime(): SandboxRuntime & {
   wrapped: { command: string; shell: string | undefined }[];
   argvWrapped: string[];
   cleanups: number;
@@ -51,9 +49,6 @@ function fakeRuntime(
         ],
         env: { SRT_FENCED: "1" },
       };
-    },
-    getSocksProxyPort(): number | undefined {
-      return options.socksProxyPort;
     },
     cleanupAfterCommand(): void {
       runtime.cleanups += 1;
@@ -167,7 +162,7 @@ test("kills a command when the caller aborts", async () => {
   );
 });
 
-test("tells the runtime each command has finished, so it can release proxy state", async () => {
+test("tells the runtime each command has finished, so it can release sandbox state", async () => {
   const runtime = fakeRuntime();
   const ops = createSandboxedBashOps(runtime, shell);
 
@@ -177,29 +172,6 @@ test("tells the runtime each command has finished, so it can release proxy state
   );
 
   assert.equal(runtime.cleanups, 2);
-});
-
-test("routes ssh through the runtime's SOCKS proxy on macOS", async (t) => {
-  if (process.platform !== "darwin") {
-    t.skip("the ssh shim is macOS-specific");
-    return;
-  }
-  const runtime = fakeRuntime({ socksProxyPort: 1080 });
-  const ops = createSandboxedBashOps(runtime, shell);
-
-  await ops.exec("ssh host", cwd, { onData: () => {} });
-
-  assert.match(runtime.wrapped[0]?.command ?? "", /^ssh\(\) \{/);
-  assert.match(runtime.wrapped[0]?.command ?? "", /-x localhost:1080/);
-});
-
-test("leaves ssh alone when the runtime reports no proxy port", async () => {
-  const runtime = fakeRuntime();
-  const ops = createSandboxedBashOps(runtime, shell);
-
-  await ops.exec("ssh host", cwd, { onData: () => {} });
-
-  assert.doesNotMatch(runtime.wrapped[0]?.command ?? "", /ssh\(\)/);
 });
 
 test("writes the command to stdin when the shell is configured that way", async () => {

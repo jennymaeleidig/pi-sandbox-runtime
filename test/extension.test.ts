@@ -138,7 +138,6 @@ function fakeRuntime(
     ): Promise<{ argv: string[]; env: NodeJS.ProcessEnv }> {
       return { argv: [process.execPath, "-e", command], env: {} };
     },
-    getSocksProxyPort: () => undefined,
     cleanupAfterCommand(): void {},
     async reset(): Promise<void> {
       runtime.resets += 1;
